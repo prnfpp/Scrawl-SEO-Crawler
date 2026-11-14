@@ -97,7 +97,7 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
     } catch {
       // nessuna pagina ancora
     }
-    return { id, project: id.split('/')[0], cliente: st.cliente, status, live, started_at: st.started_at, ended_at: st.ended_at, updated_at: st.updated_at, elapsed_s: st.elapsed_s, pages, not_reached: st.not_reached.count, limits: st.limits, notes: st.notes, sample: st.sample, exported: existsSync(join(dir, 'pages.csv')) };
+    return { id, project: id.split('/')[0], cliente: st.cliente, rendering: st.rendering ?? null, status, live, started_at: st.started_at, ended_at: st.ended_at, updated_at: st.updated_at, elapsed_s: st.elapsed_s, pages, not_reached: st.not_reached.count, limits: st.limits, notes: st.notes, sample: st.sample, exported: existsSync(join(dir, 'pages.csv')) };
   };
 
   const listRuns = () => {
@@ -231,18 +231,29 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
         const klass = (p: (typeof all)[number]) => (!p.fetched ? 'bloccate' : p.status === null ? 'errore' : p.status >= 500 ? 'server' : p.status >= 400 ? 'client' : p.status >= 300 ? 'redirect' : 'ok');
         const counts: Record<string, number> = { ok: 0, redirect: 0, client: 0, server: 0, errore: 0, bloccate: 0 };
         const templates: Record<string, number> = {};
+        // Filtri sull'analisi della pagina: si combinano con quello sull'esito della risposta
+        const checks: Record<string, (p: (typeof all)[number]) => boolean> = {
+          nonindex: (p) => p.status === 200 && p.indexable === false,
+          jsdiff: (p) => p.diff_fields.length > 0,
+          jsonly: (p) => p.js_only_fields.length > 0,
+          schema: (p) => (p.schema_errors as string[]).length + (p.schema_missing_required as string[]).length > 0,
+        };
+        const extra: Record<string, number> = { nonindex: 0, jsdiff: 0, jsonly: 0, schema: 0 };
         for (const p of all) {
           counts[klass(p)]++;
           templates[p.template] = (templates[p.template] ?? 0) + 1;
+          for (const k of Object.keys(checks)) if (checks[k](p)) extra[k]++;
         }
         const tpl = url.searchParams.get('modello') ?? '';
-        const rows = all.filter((p) => (!filter || klass(p) === filter) && (!tpl || p.template === tpl) && (!q || p.url.toLowerCase().includes(q)));
+        const rows = all.filter((p) => (!filter || (checks[filter] ? checks[filter](p) : klass(p) === filter)) && (!tpl || p.template === tpl) && (!q || p.url.toLowerCase().includes(q) || String(p.title ?? '').toLowerCase().includes(q)));
         return {
           total: all.length,
           matching: rows.length,
           counts,
+          extra,
+          rendered: all.filter((p) => p.rendered).length,
           templates,
-          rows: rows.slice(offset, offset + 100).map(({ headers: _h, ...p }) => p),
+          rows: rows.slice(offset, offset + 100).map(({ headers: _h, headings: _o, ...p }) => p),
           run: runInfo(id, dir),
         };
       }

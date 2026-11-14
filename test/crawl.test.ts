@@ -11,6 +11,9 @@ import { exportRun, loadPages, PAGE_COLUMNS } from '../src/report/export.js';
 import { startUi } from '../src/ui/server.js';
 import { startFixture, type Fixture } from './fixtures/server.js';
 
+/** Indirizzi del sito di prova raggiungibili senza JavaScript. */
+const BASE_PATHS = ['/', '/a', '/b', '/blog/post-1', '/blog/post-2', '/c', '/deep/1', '/deep/2', '/deep/3', '/loop1', '/loop2', '/missing', '/orfana', '/privato/x', '/redir', '/redir2', '/js/spa', '/noindex', '/canon', '/jsnoindex', '/prodotto', '/xrobots'];
+
 let fx: Fixture;
 before(async () => {
   fx = await startFixture(15);
@@ -21,7 +24,7 @@ after(async () => {
 
 const dir = () => mkdtempSync(join(tmpdir(), 'scrawl-'));
 const config = (extra: Record<string, unknown> = {}) =>
-  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 3 }, ...extra }), '/tmp/prova.yaml');
+  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 3 }, rendering: { attivo: false }, ...extra }), '/tmp/prova.yaml');
 const byPath = (rows: PageRow[]) => new Map(rows.map((r) => [new URL(r.url).pathname + new URL(r.url).search, r]));
 
 test('scansione completa: perimetro, redirect, robots, sitemap, profondità', async () => {
@@ -31,7 +34,7 @@ test('scansione completa: perimetro, redirect, robots, sitemap, profondità', as
   assert.equal(state.status, 'completata');
   const rows = byPath(RunStore.readPages(d));
 
-  assert.deepEqual([...rows.keys()].sort(), ['/', '/a', '/b', '/blog/post-1', '/blog/post-2', '/c', '/deep/1', '/deep/2', '/deep/3', '/loop1', '/loop2', '/missing', '/orfana', '/privato/x', '/redir', '/redir2'].sort());
+  assert.deepEqual([...rows.keys()].sort(), [...BASE_PATHS].sort());
   assert.equal(rows.get('/')!.depth, 0);
   assert.equal(rows.get('/a')!.depth, 1);
   assert.equal(rows.get('/c')!.depth, 2);
@@ -75,6 +78,7 @@ test('scansione completa: perimetro, redirect, robots, sitemap, profondità', as
   // fuori perimetro: contati e dichiarati
   assert.equal(state.excluded['altro dominio'].count, 1);
   assert.equal(state.excluded['file che non è una pagina'].count, 1);
+  assert.ok(state.limits.some((l) => /Rendering con browser disattivato/.test(l)));
   assert.ok(state.limits.some((l) => /robots\.txt/.test(l)));
 
   // link
@@ -88,7 +92,7 @@ test('scansione completa: perimetro, redirect, robots, sitemap, profondità', as
   const csv = readFileSync(join(d, 'pages.csv'), 'utf8');
   assert.equal(csv.replace(/^﻿/, '').split(/\r?\n/)[0].replace(/"/g, ''), PAGE_COLUMNS.join(csv.includes(';') && !csv.split('\n')[0].includes(',') ? ';' : ','));
   const manifest = JSON.parse(readFileSync(join(d, 'manifest.json'), 'utf8'));
-  assert.equal(manifest.counts.pages, 16);
+  assert.equal(manifest.counts.pages, BASE_PATHS.length);
   assert.ok(manifest.not_verified.length > 0);
   const pages = loadPages(d);
   assert.equal(pages.find((p) => p.url === `${fx.origin}/`)!.template, 'home');
@@ -127,7 +131,7 @@ test('ripresa dopo una chiusura improvvisa: riga scritta a metà scartata', asyn
   appendFileSync(join(d, 'pagine.jsonl'), '{"url":"http://127.0.0.1/tronc');
   const s = await new Crawler(loadConfigText(Crawler.savedConfig(d)!, join(d, 'config.yaml')), d).run();
   assert.equal(s.status, 'completata');
-  assert.equal(loadPages(d).length, 16);
+  assert.equal(loadPages(d).length, BASE_PATHS.length);
 });
 
 test('limiti: pagine e profondità, con ciò che resta fuori dichiarato', async () => {
@@ -187,7 +191,7 @@ test('interfaccia: progetto, avvio, avanzamento, risultati', async () => {
     const bad = await call('/api/progetti', { config: { cliente: 'X', partenza: {} } });
     assert.equal(bad.status, 400);
     assert.match(bad.json.error, /punto di partenza/);
-    const saved = await call('/api/progetti', { config: { cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0 } } });
+    const saved = await call('/api/progetti', { config: { cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0 }, rendering: { attivo: false } } });
     assert.equal(saved.json.name, 'Sito-di-prova');
     assert.ok(existsSync(join(root, 'clienti', 'Sito-di-prova.yaml')));
     const run = await call('/api/scansioni', { project: 'Sito-di-prova' });
@@ -198,7 +202,7 @@ test('interfaccia: progetto, avvio, avanzamento, risultati', async () => {
       await new Promise((r) => setTimeout(r, 50));
     }
     const pages = await call(`/api/scansioni/${run.json.id}/pagine?filtro=client`);
-    assert.equal(pages.json.total, 16);
+    assert.equal(pages.json.total, BASE_PATHS.length);
     assert.equal(pages.json.matching, 1);
     assert.equal(pages.json.run.status, 'completata');
     assert.equal(pages.json.run.exported, true);

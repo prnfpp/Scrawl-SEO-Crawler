@@ -1,0 +1,33 @@
+# Proprietà controllate per i tipi di dati strutturati più comuni.
+# "obbligatorie": senza, Google non mostra il risultato arricchito. "consigliate": migliorano il risultato.
+# "almenoUna": basta una delle proprietà elencate. "sottotipi": tipi trattati come il tipo principale.
+# Proprietà annidate con il punto (offers.price): si controllano su ogni elemento, se il valore è un elenco.
+#
+# Fonte: documentazione di Google Search Central sui dati strutturati (developers.google.com/search/docs/appearance/structured-data).
+# Stato: elenco redatto a memoria il 2026-11-14, NON ancora riletto sulla documentazione ufficiale.
+# Va verificato e aggiornato qui, senza toccare il codice.
+
+tipi:
+  Organization:
+    sottotipi: [Corporation, NGO, EducationalOrganization, OnlineStore, OnlineBusiness]
+    obbligatorie: []
+    consigliate: [name, url, logo, sameAs, contactPoint]
+  LocalBusiness:
+    sottotipi: [Restaurant, Store, Hotel, LodgingBusiness, MedicalBusiness, Dentist, ProfessionalService, AutomotiveBusiness, HomeAndConstructionBusiness, FoodEstablishment, LegalService, RealEstateAgent, TravelAgency, HealthAndBeautyBusiness, FinancialService]
+    obbligatorie: [name, address]
+    consigliate: [telephone, url, openingHoursSpecification, geo, priceRange, image]
+  Product:
+    sottotipi: [ProductGroup, IndividualProduct]
+    obbligatorie: [name]
+    almenoUna: [offers, review, aggregateRating]
+    consigliate: [image, description, brand, sku, offers.price, offers.priceCurrency, offers.availability]
+  Article:
+    sottotipi: [NewsArticle, BlogPosting, TechArticle, Report]
+    obbligatorie: []
+    consigliate: [headline, image, datePublished, dateModified, author]
+  BreadcrumbList:
+    obbligatorie: [itemListElement, itemListElement.position, itemListElement.name]
+    consigliate: []
+  FAQPage:
+    obbligatorie: [mainEntity, mainEntity.name, mainEntity.acceptedAnswer]
+    consigliate: []

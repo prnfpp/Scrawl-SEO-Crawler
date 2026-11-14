@@ -1,6 +1,9 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, truncateSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Diff } from '../extract/compare.js';
+import type { PageFacts } from '../extract/extract.js';
 import type { RedirectType } from './fetch.js';
+import type { RenderedImage } from './render.js';
 
 /** Versione del formato dei file di dati. 0 = in costruzione (passi 2-6); diventa 1 con il formato completo. */
 export const SCHEMA_VERSION = 0;
@@ -40,6 +43,37 @@ export interface PageRow {
   fetched_at: string;
   /** Intestazioni della risposta a questo indirizzo (solo nei JSON). */
   headers: Record<string, string>;
+  /** Ciò che si legge nell'HTML del server (solo pagine HTML con risposta corretta). */
+  raw?: PageFacts | null;
+  /** Segnale, nel solo sorgente, che la pagina dipende da JavaScript. */
+  raw_suspect?: string | null;
+}
+
+/** Esito del rendering di una pagina con il browser. */
+export interface RenderRow {
+  url: string;
+  rendered_url: string | null;
+  status: number | null;
+  ms: number;
+  error: string | null;
+  bot_block: string | null;
+  tracker_requests_blocked: number;
+  /** Perché la pagina è stata renderizzata. */
+  reason: string;
+  facts: PageFacts | null;
+  diff: Diff | null;
+  images: { loaded: number; bytes: number; heavy: number; legacy_format: number; heaviest: RenderedImage[] };
+  rendered_at: string;
+}
+
+export interface RenderLinkRow {
+  source_url: string;
+  target_url: string;
+  anchor: string;
+  rel: string;
+  nofollow: boolean;
+  is_internal: boolean;
+  placement: string;
 }
 
 export interface LinkRow {
@@ -52,6 +86,8 @@ export interface LinkRow {
   /** Presente nell'HTML del server / nel DOM renderizzato (quest'ultimo dal passo 3). */
   in_raw: boolean;
   in_rendered: boolean | null;
+  /** Parte della pagina in cui si trova il link: main, nav, header, footer, aside, body. */
+  placement?: string;
 }
 
 export type RunStatus = 'in-corso' | 'in-pausa' | 'completata' | 'interrotta';
@@ -76,6 +112,8 @@ export interface RunState {
   robots: { host: string; status: number | null; found: boolean; crawl_delay: number | null; sitemaps: string[] }[];
   /** Modalità a campione: indirizzi candidati e scelti. */
   sample: { candidates: number; picked: number } | null;
+  /** Rendering con browser: quante pagine, con quale criterio. */
+  rendering: { mode: 'disattivo' | 'non-avviato' | 'tutte' | 'selezione'; eligible: number; rendered: number; browser: string | null; trackers_blocked: number; error: string | null } | null;
   notes: string[];
   /** Cosa non è stato verificato, in chiaro, per il report. */
   limits: string[];
@@ -113,20 +151,26 @@ function dropPartialLine(path: string) {
  * si ferma in qualsiasi punto, ciò che è stato scansionato resta e la ripresa riparte da lì.
  *   frontiera.jsonl  indirizzi scoperti (accodati)
  *   pagine.jsonl     una riga per indirizzo visitato
- *   link.jsonl       link trovati nelle pagine
+ *   link.jsonl       link trovati nell'HTML del server
+ *   render.jsonl     esito del rendering con browser, una riga per pagina renderizzata
+ *   link-render.jsonl  link trovati nel DOM renderizzato
  *   stato.json       stato della scansione (riscritto per intero, con sostituzione atomica)
  */
 export class RunStore {
   private fdFrontier: number;
   private fdPages: number;
   private fdLinks: number;
+  private fdRender: number;
+  private fdRenderLinks: number;
 
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true });
-    for (const f of ['frontiera.jsonl', 'pagine.jsonl', 'link.jsonl']) dropPartialLine(join(dir, f));
+    for (const f of ['frontiera.jsonl', 'pagine.jsonl', 'link.jsonl', 'render.jsonl', 'link-render.jsonl']) dropPartialLine(join(dir, f));
     this.fdFrontier = openSync(join(dir, 'frontiera.jsonl'), 'a');
     this.fdPages = openSync(join(dir, 'pagine.jsonl'), 'a');
     this.fdLinks = openSync(join(dir, 'link.jsonl'), 'a');
+    this.fdRender = openSync(join(dir, 'render.jsonl'), 'a');
+    this.fdRenderLinks = openSync(join(dir, 'link-render.jsonl'), 'a');
   }
 
   static exists(dir: string): boolean {
@@ -155,6 +199,22 @@ export class RunStore {
 
   saveSitemapEntries(entries: { loc: string; lastmod: string | null; sitemap: string }[]) {
     writeFileSync(join(this.dir, 'sitemap.jsonl'), entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : ''));
+  }
+
+  static readRender(dir: string): RenderRow[] {
+    return readJsonl<RenderRow>(join(dir, 'render.jsonl'));
+  }
+
+  static readRenderLinks(dir: string): RenderLinkRow[] {
+    return readJsonl<RenderLinkRow>(join(dir, 'link-render.jsonl'));
+  }
+
+  addRender(row: RenderRow) {
+    writeSync(this.fdRender, `${JSON.stringify(row)}\n`);
+  }
+
+  addRenderLinks(rows: RenderLinkRow[]) {
+    if (rows.length) writeSync(this.fdRenderLinks, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
 
   static readFrontier(dir: string): FrontierEntry[] {
@@ -188,7 +248,7 @@ export class RunStore {
   }
 
   close() {
-    for (const fd of [this.fdFrontier, this.fdPages, this.fdLinks]) {
+    for (const fd of [this.fdFrontier, this.fdPages, this.fdLinks, this.fdRender, this.fdRenderLinks]) {
       try {
         closeSync(fd);
       } catch {

@@ -52,6 +52,7 @@ nav.tabs button[aria-current="page"] { opacity: 1; background: rgba(255,255,255,
 @keyframes pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .status.run .dot { animation: none; } }
 
+main > section > *, .stack > * { min-width: 0; }
 main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 80px; display: grid; gap: 20px; }
 section { display: grid; gap: 18px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 22px; min-width: 0; }
@@ -89,7 +90,7 @@ details.adv[open] summary { margin-bottom: 12px; }
 .note.bad { background: var(--bad-soft); color: var(--bad); }
 .note ul { margin: 6px 0 0; padding-left: 18px; }
 .empty { text-align: center; padding: 38px 20px; display: grid; gap: 10px; justify-items: center; }
-.pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 650; background: var(--info-soft); color: var(--info); white-space: nowrap; }
+.pill { display: inline-block; max-width: 100%; border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 650; background: var(--info-soft); color: var(--info); white-space: nowrap; }
 .pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.warn { background: var(--warn-soft); color: var(--warn); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.run { background: var(--accent-soft); color: var(--primary); }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
@@ -108,6 +109,12 @@ th { background: var(--warm); font-weight: 650; white-space: nowrap; position: s
 tr:last-child td { border-bottom: 0; }
 td.u { min-width: 260px; max-width: 460px; overflow-wrap: anywhere; font-family: var(--f-mono); font-size: .8rem; }
 td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .pill { white-space: normal; border-radius: 10px; }
+tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--warm); }
+table.kv th { background: var(--warm); position: static; white-space: normal; width: 22%; vertical-align: top; }
+table.kv td { overflow-wrap: anywhere; } td.chg { background: var(--warn-soft); }
+#detail h3 { margin-bottom: 6px; } #detail ul { margin: 0; padding-left: 18px; }
+#detail { scroll-margin-top: 76px; }
 .code { font-weight: 700; font-variant-numeric: tabular-nums; }
 .code.c2 { color: var(--ok); } .code.c3 { color: var(--warn); } .code.c4, .code.c5, .code.ce { color: var(--bad); }
 pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm); border-radius: 10px; padding: 10px 12px; font: .78rem/1.5 var(--f-mono); white-space: pre-wrap; }
@@ -197,6 +204,18 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
           </div>
         </fieldset>
         <details class="adv">
+          <summary>Rendering con il browser</summary>
+          <div class="stack">
+            <label class="check"><input type="checkbox" name="renderAttivo" checked><span>Confronta l'HTML del server con la pagina dopo JavaScript<br><span class="muted small">Serve a vedere ciò che esiste solo dopo l'esecuzione degli script: contenuti, link, canonical, dati strutturati.</span></span></label>
+            <div class="grid2">
+              <label class="f">Renderizza tutto fino a (pagine)<span class="hint">Sopra questa soglia: un campione per tipologia più le pagine sospette</span><input type="number" name="soglia" min="0" value="500"></label>
+              <label class="f">Pagine per tipologia nel campione<input type="number" name="perModello" min="1" value="20"></label>
+            </div>
+            <label class="check"><input type="checkbox" name="bloccaTracker" checked><span>Blocca statistiche e pubblicità durante il rendering<br><span class="muted small">Le visite dello strumento non arrivano agli analytics del cliente.</span></span></label>
+            <p class="note warn" id="tracker-warn" hidden>Senza il blocco, ogni pagina renderizzata può comparire come visita negli analytics del cliente.</p>
+          </div>
+        </details>
+        <details class="adv">
           <summary>Rispetto del sito</summary>
           <div class="stack">
             <div class="grid2">
@@ -235,6 +254,7 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
         <div class="kpis">
           <div class="kpi"><b id="k-done">0</b><span>indirizzi visitati</span></div>
           <div class="kpi"><b id="k-queue">0</b><span>in coda</span></div>
+          <div class="kpi"><b id="k-render">–</b><span>pagine renderizzate</span></div>
           <div class="kpi"><b id="k-rate">–</b><span>pagine al minuto</span></div>
           <div class="kpi"><b id="k-eta">–</b><span>tempo rimanente stimato</span></div>
         </div>
@@ -261,19 +281,21 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
         <div class="row" id="run-actions"></div>
       </div>
       <div class="note warn" id="run-limits" hidden></div>
+      <div class="note" id="run-notes" hidden></div>
       <div class="card stack">
         <div class="chips" id="filters" role="group" aria-label="Filtra per esito"></div>
         <div class="grid2">
-          <label class="f">Cerca nell'indirizzo<input type="text" id="q" autocomplete="off" placeholder="/prodotti/"></label>
+          <label class="f">Cerca nell'indirizzo o nel title<input type="text" id="q" autocomplete="off" placeholder="/prodotti/"></label>
           <label class="f">Tipologia di pagina<select id="tpl"></select></label>
         </div>
         <p class="muted small" id="count"></p>
         <div class="tablewrap"><table>
-          <thead><tr><th>Codice</th><th>Indirizzo</th><th>Destinazione</th><th>Tipologia</th><th>Livello</th><th>Origine</th><th>Nota</th></tr></thead>
+          <thead><tr><th>Codice</th><th>Indirizzo</th><th>Indicizzabile</th><th>Title</th><th>Dopo JavaScript</th><th>Tipologia</th><th>Livello</th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
         <button class="btn" id="more" hidden>Mostra altre</button>
       </div>
+      <div class="card stack" id="detail" hidden tabindex="-1"></div>
     </div>
   </section>
 </main>
@@ -322,6 +344,8 @@ function dur(s) {
 }
 const STATUS = { 'in-corso': ['In corso', 'run'], 'in-pausa': ['In pausa', 'warn'], completata: ['Completata', 'ok'], interrotta: ['Interrotta', 'bad'] };
 const CLASSES = { ok: 'Risposta corretta (2xx)', redirect: 'Redirect (3xx)', client: 'Non trovate o vietate (4xx)', server: 'Errore del server (5xx)', errore: 'Nessuna risposta', bloccate: 'Vietate da robots.txt' };
+Object.assign(CLASSES, { nonindex: 'Non indicizzabili', jsdiff: 'Cambiano dopo JavaScript', jsonly: 'Con parti solo dopo JavaScript', schema: 'Dati strutturati con errori' });
+const FIELD = { url: 'indirizzo', title: 'title', description: 'description', canonical: 'canonical', robots_meta: 'meta robots', h1: 'H1', lang: 'lingua', hreflang: 'hreflang', schema_types: 'dati strutturati', content: 'contenuto', links: 'link interni' };
 const SOURCE = { partenza: 'punto di partenza', link: 'link', sitemap: 'sitemap', elenco: 'elenco', redirect: 'redirect' };
 const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
 const withScheme = (u) => (!u ? u : /^https?:\/\//i.test(u) ? u : 'https://' + u.replace(/^\/+/, ''));
@@ -384,6 +408,7 @@ function syncForm() {
     ? 'Visita alcune pagine per ogni tipologia (home, categorie, prodotti, articoli…), riconosciuta dalla struttura degli indirizzi. Veloce: utile per una prima lettura di un sito grande.'
     : 'Visita tutte le pagine nel perimetro, fino ai limiti indicati sopra.';
   $('#robots-warn').hidden = form.rispettaRobots.checked;
+  $('#tracker-warn').hidden = form.bloccaTracker.checked || !form.renderAttivo.checked;
 }
 form.addEventListener('change', syncForm);
 form.dominio.addEventListener('blur', () => { form.dominio.value = withScheme(form.dominio.value.trim()); });
@@ -414,6 +439,10 @@ function openForm(p) {
     form.paralleli.value = c.cortesia.paralleli;
     form.contatto.value = c.cortesia.contatto;
     form.rispettaRobots.checked = c.cortesia.rispettaRobots;
+    form.renderAttivo.checked = c.rendering.attivo;
+    form.soglia.value = c.rendering.soglia;
+    form.perModello.value = c.rendering.perModello;
+    form.bloccaTracker.checked = c.rendering.bloccaTracker;
     if (c.partenza.sitemap.length || c.partenza.url.length) form.querySelector('details').open = true;
   }
   syncForm();
@@ -433,6 +462,7 @@ function readForm() {
     modalita: form.modalita.value,
     campionamento: { perTipo: Number(form.perTipo.value), maxPagine: Number(form.campioneMax.value), tipi },
     cortesia: { ...(prev.cortesia || {}), pausaMs: Number(form.pausaMs.value), paralleli: Number(form.paralleli.value), contatto: form.contatto.value.trim(), rispettaRobots: form.rispettaRobots.checked },
+    rendering: { ...(prev.rendering || {}), attivo: form.renderAttivo.checked, soglia: Number(form.soglia.value), perModello: Number(form.perModello.value), bloccaTracker: form.bloccaTracker.checked },
   };
   const dom = withScheme(form.dominio.value.trim());
   if (dom) cfg.partenza.dominio = dom;
@@ -483,14 +513,17 @@ function renderScan() {
   $('#scan-title').textContent = 'Scansione · ' + active.id.split('/')[0];
   if (!p) { $('#scan-phase').textContent = 'Avvio…'; return; }
   $('#scan-phase').textContent = p.phase.charAt(0).toUpperCase() + p.phase.slice(1);
+  const rendering = p.phase.startsWith('rendering') && p.toRender > 0;
   const total = Math.min(p.limit, p.done + p.queued + p.inFlight) || 1;
-  const pct = Math.min(100, Math.round((p.done / total) * 100));
+  const pct = Math.min(100, Math.round((rendering ? p.rendered / p.toRender : p.done / total) * 100));
+  if (rendering) $('#scan-phase').textContent = `Rendering con il browser: ${nf.format(p.rendered)} di ${nf.format(p.toRender)} pagine`;
+  $('#k-render').textContent = p.toRender ? `${nf.format(p.rendered)} / ${nf.format(p.toRender)}` : '–';
   $('#bar i').style.width = pct + '%';
   $('#bar').setAttribute('aria-valuenow', pct);
   $('#k-done').textContent = nf.format(p.done);
   $('#k-queue').textContent = nf.format(p.queued);
   $('#k-rate').textContent = p.perMinute ? nf.format(p.perMinute) : '–';
-  $('#k-eta').textContent = dur(p.etaSeconds);
+  $('#k-eta').textContent = rendering ? '–' : dur(p.etaSeconds);
   $('#k-status').replaceChildren(...Object.entries(p.byStatus).filter(([, n]) => n).map(([k, n]) => h('span', { class: 'pill ' + (k === 'ok' ? 'ok' : k === 'redirect' || k === 'bloccate' ? 'warn' : 'bad') }, `${CLASSES[k]}: ${nf.format(n)}`)));
   $('#recent').replaceChildren(...p.recent.map((r) => h('tr', {}, h('td', {}, codeEl(r.status, r.note.startsWith('vietata'))), h('td', { class: 'u' }, r.url), h('td', { class: 'small' }, r.note))));
   $('#log').textContent = active.log.join('\n');
@@ -551,27 +584,72 @@ async function loadRows(reset) {
     ...(resumable ? [h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi la scansione')] : []),
     ...(r.exported ? [dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)'), dl('manifest.json', 'Manifest')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
   const lim = $('#run-limits');
-  const items = [...r.limits, ...r.notes];
-  lim.hidden = !items.length;
-  lim.replaceChildren(h('b', {}, 'Cosa non è stato verificato'), h('ul', {}, items.map((t) => h('li', {}, t))));
+  lim.hidden = !r.limits.length;
+  lim.replaceChildren(h('b', {}, 'Cosa non è stato verificato'), h('ul', {}, r.limits.map((t) => h('li', {}, t))));
+  const notes = $('#run-notes');
+  notes.hidden = !r.notes.length;
+  notes.replaceChildren(h('b', {}, 'Note sulla scansione'), h('ul', {}, r.notes.map((t) => h('li', {}, t))));
   $('#filters').replaceChildren(
     h('button', { class: 'chip', 'aria-pressed': String(!view.filtro), onclick: () => { view.filtro = ''; loadRows(true); } }, `Tutti: ${nf.format(d.total)}`),
-    ...Object.entries(d.counts).filter(([, n]) => n).map(([k, n]) => h('button', { class: 'chip', 'aria-pressed': String(view.filtro === k), onclick: () => { view.filtro = view.filtro === k ? '' : k; loadRows(true); } }, `${CLASSES[k]}: ${nf.format(n)}`)));
+    ...[...Object.entries(d.counts), ...Object.entries(d.extra)].filter(([, n]) => n).map(([k, n]) => h('button', { class: 'chip', 'aria-pressed': String(view.filtro === k), onclick: () => { view.filtro = view.filtro === k ? '' : k; loadRows(true); } }, `${CLASSES[k]}: ${nf.format(n)}`)));
+  $('#detail').hidden = true;
   const tpl = $('#tpl');
   tpl.replaceChildren(h('option', { value: '' }, 'Tutte le tipologie'), ...Object.entries(d.templates).sort((a, b) => b[1] - a[1]).map(([k, n]) => h('option', { value: k, selected: k === view.modello }, `${k} (${nf.format(n)})`)));
-  const trs = d.rows.map((p) => h('tr', {},
+  const trs = d.rows.map((p) => h('tr', { class: 'pick', tabindex: 0, onclick: () => showDetail(p), onkeydown: (e) => { if (e.key === 'Enter') showDetail(p); } },
     h('td', {}, codeEl(p.status, !p.fetched)),
-    h('td', { class: 'u' }, p.url),
-    h('td', { class: 'u' }, p.final_url && p.final_url !== p.url ? `${p.final_url}${p.final_status ? ` (${p.final_status})` : ''}` : ''),
+    h('td', { class: 'u' }, p.url, p.final_url && p.final_url !== p.url ? h('div', { class: 'muted' }, `→ ${p.final_url}${p.final_status ? ` (${p.final_status})` : ''}`) : null),
+    h('td', { class: 'small' }, p.indexable === true ? h('span', { class: 'pill ok' }, 'sì') : p.indexable === false ? [h('span', { class: 'pill bad' }, 'no'), ' ', p.indexability_reason] : h('span', { class: 'muted' }, p.indexability_reason || '–')),
+    h('td', { class: 'small' }, p.title || (p.raw_word_count !== null ? h('span', { class: 'muted' }, 'assente') : '')),
+    h('td', { class: 'small' }, !p.rendered ? h('span', { class: 'muted' }, p.raw_word_count !== null ? 'non renderizzata' : '') : p.diff_fields.length ? h('span', { class: 'pill warn', title: p.diff_fields.map((f) => FIELD[f] || f).join(', ') }, `cambia: ${p.diff_fields.map((f) => FIELD[f] || f).join(', ')}`) : h('span', { class: 'pill ok' }, 'uguale')),
     h('td', {}, p.template),
-    h('td', { class: 'n' }, p.depth ?? '–'),
-    h('td', {}, SOURCE[p.source] || p.source),
-    h('td', { class: 'small' }, p.error || (!p.fetched ? p.robots_txt_rule : p.redirect_type === 'catena' ? `catena di ${p.redirect_hops} redirect` : p.redirect_type === 'loop' ? 'redirect in loop' : ''))));
+    h('td', { class: 'n' }, p.depth ?? '–')));
   if (reset) $('#rows').replaceChildren(...trs); else $('#rows').append(...trs);
   if (!d.rows.length && reset) $('#rows').append(h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'Nessun indirizzo con questi filtri.')));
   const shown = view.da + d.rows.length;
   $('#count').textContent = `${nf.format(Math.min(shown, d.matching))} di ${nf.format(d.matching)} indirizzi`;
   $('#more').hidden = shown >= d.matching;
+}
+/** Scheda di una pagina: ciò che manda il server accanto a ciò che esiste dopo JavaScript. */
+function showDetail(p) {
+  const box = $('#detail');
+  const val = (v) => (Array.isArray(v) ? (v.length ? v.join(' · ') : '–') : v === null || v === undefined || v === '' ? '–' : String(v));
+  const cmp = (label, key, raw, eff) => {
+    const changed = p.rendered && p.diff_fields.includes(key);
+    return h('tr', {}, h('th', {}, label), h('td', {}, val(raw)), h('td', { class: changed ? 'chg' : '' }, p.rendered ? val(eff) : h('span', { class: 'muted' }, 'non renderizzata')), h('td', {}, changed ? h('span', { class: 'pill warn' }, p.js_only_fields.includes(key) ? 'solo dopo JavaScript' : 'cambia') : ''));
+  };
+  const list = (title, items, cls) => (items && items.length ? h('div', {}, h('h3', {}, title), h('ul', { class: 'small ' + (cls || '') }, items.map((t) => h('li', {}, t)))) : null);
+  const facts = [
+    ['Risposta', `${p.status ?? 'nessuna'}${p.redirect_hops ? ` · ${p.redirect_chain.map((c) => `${c.status} ${c.url}`).join(' → ')}` : ''}`],
+    ['Indicizzabile', p.indexable === true ? 'sì' : p.indexable === false ? `no: ${p.indexability_reason}` : p.indexability_reason || '–'],
+    ['Canonical', `${p.canonical_type ?? '–'}${p.canonical ? ` · ${p.canonical}` : ''}`],
+    ['Meta robots · X-Robots-Tag', `${val(p.robots_meta)} · ${val(p.x_robots_tag)}`],
+    ['Lingua · hreflang', `${val(p.lang)} · ${p.hreflang_count ?? 0} alternative`],
+    ['Trovata', `${SOURCE[p.source] || p.source}${p.found_on ? ` in ${p.found_on}` : ''} · livello ${p.depth ?? '–'} · ${p.in_sitemap ? 'in sitemap' : 'non in sitemap'}`],
+    ['Immagini', p.images_count == null ? '–' : `${p.images_count} · ${p.images_missing_alt} senza testo alternativo · ${p.images_missing_dimensions} senza dimensioni${p.images_bytes != null ? ` · ${nf.format(Math.round(p.images_bytes / 1024))} KB scaricati · ${p.images_heavy} oltre 200 KB` : ''}`],
+    ['Rendering', p.rendered ? `${p.render_reason} · ${p.tracker_requests_blocked} richieste di tracciamento bloccate` : p.render_error ? `non riuscito: ${p.render_error}` : p.render_reason || '–'],
+  ];
+  box.replaceChildren(...[
+    h('div', { class: 'row spread' }, h('div', { style: 'min-width:0' }, h('p', { class: 'eyebrow' }, 'Scheda della pagina'), h('h2', { class: 'mono', style: 'overflow-wrap:anywhere' }, p.url)), h('button', { class: 'btn', onclick: () => { box.hidden = true; } }, 'Chiudi')),
+    h('div', { class: 'tablewrap' }, h('table', { class: 'kv' }, h('tbody', {}, facts.map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))))),
+    p.raw_word_count !== null ? h('div', {}, h('h3', {}, 'Sorgente contro renderizzato'), h('div', { class: 'tablewrap' }, h('table', { class: 'kv' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'HTML del server'), h('th', {}, 'Dopo JavaScript'), h('th', {}, ''))),
+      h('tbody', {},
+        cmp('Title', 'title', p.raw_title, p.title),
+        cmp('Description', 'description', p.raw_description, p.description),
+        cmp('Canonical', 'canonical', p.raw_canonical, p.canonical),
+        cmp('Meta robots', 'robots_meta', p.raw_robots_meta, p.robots_meta),
+        cmp('H1', 'h1', p.raw_h1, p.h1),
+        cmp('Parole del contenuto principale', 'content', p.raw_word_count, p.word_count),
+        cmp('Link interni', 'links', p.raw_outlinks_internal, p.rendered ? `${p.outlinks_internal} (${p.links_only_rendered} solo dopo JavaScript, ${p.links_only_raw} solo nel sorgente)` : null),
+        cmp('Dati strutturati', 'schema_types', p.raw_schema_types, p.schema_types))))) : null,
+    list('Gerarchia dei titoli', p.heading_issues),
+    list('Dati strutturati: errori di sintassi', p.schema_errors),
+    list('Dati strutturati: proprietà obbligatorie mancanti', p.schema_missing_required),
+    list('Dati strutturati: proprietà consigliate mancanti', p.schema_missing_recommended),
+    list('Dati strutturati non coerenti con il testo visibile', p.schema_content_mismatch)].filter(Boolean));
+  box.hidden = false;
+  box.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  box.focus({ preventScroll: true });
 }
 let qTimer;
 $('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { view.q = e.target.value.trim(); loadRows(true); }, 250); });

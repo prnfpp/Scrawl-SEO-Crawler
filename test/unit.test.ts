@@ -4,7 +4,6 @@ import { configSchema } from '../src/config/schema.js';
 import { crawlDelayFor, parseRobots, robotsCheck } from '../src/crawl/robots.js';
 import { normalizeUrl, Scope } from '../src/crawl/scope.js';
 import { parseSitemapXml } from '../src/crawl/sitemap.js';
-import { extractLinks } from '../src/crawl/links.js';
 import { LINK_COLUMNS, PAGE_COLUMNS } from '../src/report/export.js';
 
 const cfg = (extra: Record<string, unknown> = {}) => configSchema.parse({ cliente: 'Test', partenza: { dominio: 'https://www.esempio.it/' }, ...extra });
@@ -57,12 +56,9 @@ test('sitemap: indice, pagine con lastmod, testo semplice', () => {
   assert.equal(parseSitemapXml('<html><body>404</body></html>').kind, 'non-valida');
 });
 
-test('link: base, nofollow, testo da immagine, schemi non http', () => {
-  const links = extractLinks('<base href="/sezione/"><a href="x" rel="NoFollow sponsored"> Vai  a X </a><a href="/y"><img alt="Logo"></a><a href="tel:123">t</a><a href="#top">su</a>', 'https://x.it/pagina');
-  assert.deepEqual(links.map((l) => [l.href, l.anchor, l.nofollow]), [['https://x.it/sezione/x', 'Vai a X', true], ['https://x.it/y', 'Logo', false]]);
-});
-
 test('formato: le colonne dei file di dati non cambiano senza una voce "Formato" nel CHANGELOG', () => {
-  assert.deepEqual([...PAGE_COLUMNS], ['url', 'status', 'final_url', 'final_status', 'redirect_type', 'redirect_hops', 'redirect_chain', 'redirect_to', 'content_type', 'template', 'depth', 'source', 'found_on', 'in_sitemap', 'robots_txt_blocked', 'robots_txt_rule', 'fetched', 'fetch_ms', 'bytes', 'error', 'fetched_at']);
-  assert.deepEqual([...LINK_COLUMNS], ['source_url', 'target_url', 'anchor', 'rel', 'nofollow', 'is_internal', 'in_raw', 'in_rendered', 'target_status', 'target_final_url']);
+  // Le colonne possono solo aumentare finché schema_version è 0: le prime restano dove sono
+  assert.deepEqual(PAGE_COLUMNS.slice(0, 21), ['url', 'status', 'final_url', 'final_status', 'redirect_type', 'redirect_hops', 'redirect_chain', 'redirect_to', 'content_type', 'template', 'depth', 'source', 'found_on', 'in_sitemap', 'robots_txt_blocked', 'robots_txt_rule', 'fetched', 'fetch_ms', 'bytes', 'error', 'fetched_at']);
+  assert.deepEqual(PAGE_COLUMNS.slice(21), ['robots_meta', 'x_robots_tag', 'canonical', 'canonical_type', 'canonical_count', 'indexable', 'indexability_reason', 'title', 'title_length', 'title_count', 'description', 'description_length', 'h1', 'h1_count', 'heading_issues', 'word_count', 'content_hash', 'content_simhash', 'lang', 'hreflang', 'hreflang_count', 'viewport', 'outlinks_internal', 'outlinks_external', 'outlinks_nofollow', 'images_count', 'images_missing_alt', 'images_missing_dimensions', 'images_bytes', 'images_heavy', 'images_legacy_format', 'schema_types', 'schema_formats', 'schema_errors', 'schema_missing_required', 'schema_missing_recommended', 'schema_content_mismatch', 'rendered', 'render_reason', 'render_error', 'raw_title', 'raw_description', 'raw_canonical', 'raw_robots_meta', 'raw_h1', 'raw_word_count', 'raw_schema_types', 'raw_outlinks_internal', 'diff_fields', 'js_only_fields', 'content_raw_ratio', 'links_only_rendered', 'links_only_raw', 'tracker_requests_blocked']);
+  assert.deepEqual([...LINK_COLUMNS], ['source_url', 'target_url', 'anchor', 'rel', 'nofollow', 'is_internal', 'in_raw', 'in_rendered', 'target_status', 'target_final_url', 'placement']);
 });

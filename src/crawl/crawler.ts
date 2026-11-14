@@ -1,15 +1,17 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sample, sleep } from 'scookie/engine';
+import { pageType, sample, sectionsOf, sleep } from 'scookie/engine';
 import type { LoadedConfig } from '../config/load.js';
 import type { CrawlConfig } from '../config/schema.js';
 import { TOOL_VERSION } from '../version.js';
 import { fetchChain, type FetchResult } from './fetch.js';
-import { extractLinks } from './links.js';
+import { CRITICAL_DIFF, diffFacts, suspectRaw, type Diff } from '../extract/compare.js';
+import { extractPage, type PageFacts } from '../extract/extract.js';
+import { Renderer } from './render.js';
 import { crawlDelayFor, parseRobots, robotsCheck, type Robots } from './robots.js';
 import { SCOPE_LABEL, Scope } from './scope.js';
 import { readSitemaps, type SitemapEntry } from './sitemap.js';
-import { RunStore, SCHEMA_VERSION, type FrontierEntry, type LinkRow, type PageRow, type RunState, type Source } from './store.js';
+import { RunStore, SCHEMA_VERSION, type FrontierEntry, type LinkRow, type PageRow, type RenderRow, type RunState, type Source } from './store.js';
 
 export interface Progress {
   status: RunState['status'];
@@ -26,6 +28,9 @@ export interface Progress {
   etaSeconds: number | null;
   elapsedSeconds: number;
   recent: { url: string; status: number | null; note: string }[];
+  /** Rendering con browser: pagine fatte e pagine scelte in questa fase. */
+  rendered: number;
+  toRender: number;
 }
 
 export interface CrawlerOptions {
@@ -63,7 +68,16 @@ const statusClass = (row: PageRow): keyof Progress['byStatus'] => {
 export class Crawler {
   private readonly cfg: CrawlConfig;
   private readonly store: RunStore;
-  private readonly ua: string;
+  private ua: string;
+  private renderer: Renderer | null = null;
+  /** Pagine HTML lette correttamente: candidate al rendering. */
+  private readonly eligible = new Map<string, { facts: PageFacts; suspect: string | null }>();
+  /** Link interni nel sorgente di ogni pagina, per il confronto con il renderizzato. */
+  private readonly rawInternal = new Map<string, string[]>();
+  /** Pagine già renderizzate: true se il confronto ha mostrato differenze che contano. */
+  private readonly renderDone = new Map<string, boolean>();
+  private toRender = 0;
+  private renderIncomplete = false;
   private scope!: Scope;
   private state!: RunState;
 
@@ -312,6 +326,7 @@ export class Crawler {
   private write(row: PageRow, note = '') {
     this.store.addPage(row);
     this.doneUrls.add(row.url);
+    if (row.raw) this.eligible.set(row.url, { facts: row.raw, suspect: row.raw_suspect ?? null });
     if (row.fetched) this.fetched++;
     this.counts[statusClass(row)]++;
     this.sessionDone++;
@@ -359,7 +374,13 @@ export class Crawler {
     const res = await this.getPolitely(url);
     // Richiesta interrotta dallo stop: nessuna riga, l'indirizzo resta in coda per la ripresa
     if (this.abort.signal.aborted) return;
-    this.write(this.row(entry, res, 0));
+    const last = res.hops.at(-1);
+    const isHtml = /html/i.test(last?.headers['content-type'] ?? '') || (!last?.headers['content-type'] && /<html[\s>]/i.test(res.body ?? ''));
+    const readable = !!res.body && isHtml && !!last && !last.location && last.status < 400;
+    const ex = readable ? extractPage(res.body!, last!.url, (h) => this.scope.isInternalHost(h)) : null;
+    // I dati della pagina vanno sulla riga dell'ultimo passaggio: è quello che ha risposto con il contenuto
+    const withFacts = (row: PageRow, i: number): PageRow => (ex && i === res.hops.length - 1 ? { ...row, raw: ex.facts, raw_suspect: suspectRaw(ex.facts, res.body!, 0) } : row);
+    this.write(withFacts(this.row(entry, res, 0), 0));
 
     // Passaggi successivi del redirect: se sono nel perimetro e non ancora visitati, la risposta già ricevuta
     // vale come loro visita (nessuna seconda richiesta).
@@ -383,7 +404,7 @@ export class Crawler {
       this.inFlight.add(target);
       try {
         await this.loadRobots(new URL(target).origin);
-        this.write(this.row(te, res, i));
+        this.write(withFacts(this.row(te, res, i), i));
       } finally {
         this.inFlight.delete(target);
       }
@@ -393,27 +414,157 @@ export class Crawler {
       }
     }
 
-    const last = res.hops.at(-1);
     // Catena rimasta a metà (errore di rete sulla destinazione): la destinazione va visitata per conto suo
     if (last?.location && res.redirectType !== 'loop') {
       const target = this.scope.normalize(last.location);
       if (target) this.enqueue(target, entry.depth, 'redirect', url);
     }
-    const isHtml = /html/i.test(last?.headers['content-type'] ?? '') || (!last?.headers['content-type'] && /<html[\s>]/i.test(res.body ?? ''));
-    if (!pageUrl || !res.body || !isHtml || (last?.status ?? 0) >= 400) return;
+    if (!pageUrl || !ex) return;
     if (res.truncated) this.note(`Pagina molto pesante letta solo in parte (oltre 8 MB): ${pageUrl}`);
-    const links = extractLinks(res.body, last!.url).slice(0, MAX_LINKS_PER_PAGE);
     const rows: LinkRow[] = [];
+    const internalTargets = new Set<string>();
     const childDepth = pageDepth === null ? null : pageDepth + 1;
-    for (const l of links) {
+    for (const l of ex.links.slice(0, MAX_LINKS_PER_PAGE)) {
       const target = this.scope.normalize(l.href);
       if (!target) continue;
       const internal = this.scope.isInternalHost(new URL(target).hostname);
-      rows.push({ source_url: pageUrl, target_url: target, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: internal, in_raw: true, in_rendered: null });
+      if (internal) internalTargets.add(target);
+      rows.push({ source_url: pageUrl, target_url: target, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: internal, in_raw: true, in_rendered: null, placement: l.placement });
       if (collect) collect(target, childDepth);
       else if (follow) this.enqueue(target, childDepth, 'link', pageUrl);
     }
     this.store.addLinks(rows);
+    this.rawInternal.set(pageUrl, [...internalTargets]);
+  }
+
+  // ---------- rendering ----------
+
+  /**
+   * Sceglie le pagine da renderizzare e le renderizza. Sotto la soglia: tutte. Sopra: un campione per modello di
+   * pagina e le pagine con sorgente sospetto; poi, se nel campione di un modello almeno il 30% delle pagine cambia
+   * dopo JavaScript in un campo che conta, tutte le pagine di quel modello.
+   */
+  private async renderPhase(follow: boolean) {
+    const r = this.cfg.rendering;
+    const renderer = this.renderer!;
+    const depthOf = (u: string) => this.entries.get(u)?.depth ?? 999;
+    for (let round = 0; round < 2 && !this.stopping; round++) {
+      const all = [...this.eligible.keys()].sort((a, b) => depthOf(a) - depthOf(b) || a.localeCompare(b));
+      const small = all.length <= r.soglia;
+      this.state.rendering = { ...this.state.rendering!, mode: small ? 'tutte' : 'selezione', eligible: all.length };
+      const todo = new Map<string, string>();
+      const want = (u: string, why: string) => {
+        if (!this.renderDone.has(u) && !todo.has(u)) todo.set(u, why);
+      };
+      if (small) {
+        if (round > 0) break;
+        for (const u of all) want(u, 'sito sotto la soglia: tutte le pagine');
+      } else {
+        const sections = sectionsOf(all);
+        const groups = new Map<string, string[]>();
+        for (const u of all) {
+          const t = pageType(u, this.cfg.campionamento.tipi, sections);
+          groups.set(t, [...(groups.get(t) ?? []), u]);
+        }
+        for (const [, urls] of groups) {
+          if (round === 0) {
+            for (const u of urls.slice(0, r.perModello)) want(u, 'campione del modello di pagina');
+            const counts = urls.map((u) => this.eligible.get(u)!.facts.links_internal).sort((a, b) => a - b);
+            const median = counts[Math.floor(counts.length / 2)] ?? 0;
+            for (const u of urls) {
+              const e = this.eligible.get(u)!;
+              const why = e.suspect ?? (median >= 10 && e.facts.links_internal < median * 0.3 ? `link interni molto sotto la mediana del modello (${e.facts.links_internal} contro ${median})` : null);
+              if (why) want(u, `sorgente sospetto: ${why}`);
+            }
+          } else {
+            const done = urls.filter((u) => this.renderDone.has(u));
+            const changed = done.filter((u) => this.renderDone.get(u)).length;
+            if (done.length >= 3 && changed / done.length >= 0.3) for (const u of urls) want(u, 'modello con differenze tra sorgente e renderizzato');
+          }
+        }
+      }
+      if (!todo.size) continue;
+      this.toRender = this.renderDone.size + todo.size;
+      this.phase = 'rendering con browser';
+      this.log(`Rendering: ${todo.size} pagine (${small ? 'tutte' : round === 0 ? 'campione per modello e pagine con sorgente sospetto' : 'modelli con differenze'})`);
+      const queue = [...todo];
+      const worker = async () => {
+        for (;;) {
+          if (this.stopping) return;
+          const item = queue.shift();
+          if (!item) return;
+          try {
+            await this.renderOne(item[0], item[1], renderer, follow);
+          } catch (e) {
+            this.log(`Errore imprevisto nel rendering di ${item[0]}: ${(e as Error).message}`);
+            this.renderDone.set(item[0], false);
+          }
+          this.emit();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(2, this.cfg.cortesia.paralleli) }, worker));
+      if (queue.length) this.renderIncomplete = true;
+      this.save();
+    }
+  }
+
+  private async renderOne(url: string, reason: string, renderer: Renderer, follow: boolean) {
+    await this.slot(url);
+    const res = await renderer.render(url);
+    if (this.abort.signal.aborted) return;
+    const raw = this.eligible.get(url)!.facts;
+    let facts: PageFacts | null = null;
+    let diff: Diff | null = null;
+    if (res.html) {
+      const ex = extractPage(res.html, res.final_url ?? url, (h) => this.scope.isInternalHost(h));
+      facts = ex.facts;
+      const targets = new Set<string>();
+      const entry = this.entries.get(url);
+      const childDepth = entry?.depth === null || entry?.depth === undefined ? null : entry.depth + 1;
+      const known = new Set(this.rawInternal.get(url) ?? []);
+      this.store.addRenderLinks(
+        ex.links.slice(0, MAX_LINKS_PER_PAGE).flatMap((l) => {
+          const target = this.scope.normalize(l.href);
+          if (!target) return [];
+          const internal = this.scope.isInternalHost(new URL(target).hostname);
+          if (internal) targets.add(target);
+          // Link che esiste solo dopo JavaScript: entra in coda come gli altri
+          if (follow && !known.has(target)) this.enqueue(target, childDepth, 'link', url);
+          return [{ source_url: url, target_url: target, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: internal, placement: l.placement }];
+        }),
+      );
+      diff = diffFacts(raw, facts, [...known], [...targets]);
+      const landed = res.final_url ? this.scope.normalize(res.final_url) : null;
+      if (landed && landed !== url) diff.diff_fields.unshift('url');
+    }
+    const legacy = /^image\/(?:jpeg|jpg|png|gif|bmp|tiff)$/;
+    const row: RenderRow = {
+      url,
+      rendered_url: res.final_url,
+      status: res.status,
+      ms: res.ms,
+      error: res.error,
+      bot_block: res.bot_block,
+      tracker_requests_blocked: res.tracker_requests_blocked,
+      reason,
+      facts,
+      diff,
+      images: {
+        loaded: res.images.length,
+        bytes: res.images.reduce((n, i) => n + i.bytes, 0),
+        heavy: res.images.filter((i) => i.bytes > 200 * 1024).length,
+        legacy_format: res.images.filter((i) => legacy.test(i.type)).length,
+        heaviest: [...res.images].sort((a, b) => b.bytes - a.bytes).slice(0, 5),
+      },
+      rendered_at: new Date().toISOString(),
+    };
+    this.store.addRender(row);
+    this.renderDone.set(url, !!diff && diff.diff_fields.some((f) => CRITICAL_DIFF.includes(f) || f === 'url'));
+    this.rawInternal.delete(url);
+    this.state.rendering!.rendered = this.renderDone.size;
+    this.state.rendering!.trackers_blocked += res.tracker_requests_blocked;
+    this.recent.unshift({ url, status: res.status, note: res.error ? `rendering: ${res.error}` : diff?.diff_fields.length ? `renderizzata, cambia dopo JavaScript: ${diff.diff_fields.join(', ')}` : 'renderizzata, nessuna differenza' });
+    if (this.recent.length > 12) this.recent.length = 12;
   }
 
   // ---------- avvio e ripresa ----------
@@ -446,6 +597,7 @@ export class Crawler {
       sitemaps: [],
       robots: [],
       sample: null,
+      rendering: null,
       notes: [],
       limits: [],
     };
@@ -458,6 +610,14 @@ export class Crawler {
       this.doneUrls.add(row.url);
       if (row.fetched) this.fetched++;
       this.counts[statusClass(row)]++;
+      if (row.raw) this.eligible.set(row.url, { facts: row.raw, suspect: row.raw_suspect ?? null });
+    }
+    for (const r of RunStore.readRender(this.runDir)) this.renderDone.set(r.url, !!r.diff && r.diff.diff_fields.some((f) => CRITICAL_DIFF.includes(f) || f === 'url'));
+    for (const l of RunStore.readLinks(this.runDir)) {
+      if (!l.is_internal || this.renderDone.has(l.source_url)) continue;
+      const list = this.rawInternal.get(l.source_url);
+      if (list) list.push(l.target_url);
+      else this.rawInternal.set(l.source_url, [l.target_url]);
     }
     for (const [url, e] of this.entries) if (!this.doneUrls.has(url)) this.push(url, e.depth);
     this.sitemapUrls = new Set(RunStore.readSitemapEntries(this.runDir).map((s) => this.scope.normalize(s.loc)).filter((u): u is string => !!u));
@@ -509,6 +669,8 @@ export class Crawler {
       etaSeconds: perMinute > 0 && this.sessionDone >= 5 ? Math.round((remaining / perMinute) * 60) : null,
       elapsedSeconds: Math.round(elapsed),
       recent: this.recent.slice(),
+      rendered: this.renderDone.size,
+      toRender: this.toRender,
     };
   }
 
@@ -527,11 +689,23 @@ export class Crawler {
   }
 
   /** Cosa non è stato verificato, in chiaro: finisce nel manifest e nel report. */
-  private buildLimits(pages: PageRow[]) {
+  private buildLimits(pages: PageRow[], renders: RenderRow[]) {
     const limits: string[] = [];
     const c = this.cfg;
     const n = (x: number, one: string, many: string) => (x === 1 ? `1 ${one}` : `${x} ${many}`);
-    limits.push('Passo 2 dello strumento: per ogni indirizzo sono rilevati solo risposta e redirect, sull\'HTML ricevuto dal server. I link aggiunti da JavaScript non sono ancora seguiti.');
+    const rd = this.state.rendering;
+    if (rd?.mode === 'disattivo') limits.push('Rendering con browser disattivato nella configurazione: i dati vengono dal solo HTML del server. Ciò che esiste solo dopo JavaScript (contenuti, link, dati strutturati) non è stato verificato.');
+    else if (rd?.mode === 'non-avviato') limits.push(`Rendering con browser non eseguito (browser non avviato: ${rd.error}): i dati vengono dal solo HTML del server.`);
+    else if (rd) {
+      if (rd.mode === 'selezione') limits.push(`Sito sopra la soglia di ${c.rendering.soglia} pagine: renderizzate con il browser ${rd.rendered} pagine su ${rd.eligible} (campione per modello, pagine con sorgente sospetto, modelli con differenze). Per le altre vale l'HTML del server.`);
+      const failed = renders.filter((x) => !x.facts).length;
+      const bots = renders.filter((x) => x.bot_block).length;
+      if (bots) limits.push(`${n(bots, 'pagina ha mostrato', 'pagine hanno mostrato')} al browser una verifica anti-bot al posto del contenuto: il confronto con il renderizzato non è valido.`);
+      if (failed - bots > 0) limits.push(`${n(failed - bots, 'pagina non è stata renderizzata', 'pagine non sono state renderizzate')} per un errore del browser o del sito.`);
+      limits.push('Il rendering usa una finestra da computer e non scorre la pagina: i contenuti caricati solo allo scorrimento o dopo un clic non sono rilevati. Il banner di consenso non viene accettato.');
+      if (c.rendering.bloccaTracker) this.note(`Richieste di statistiche e pubblicità bloccate durante il rendering: ${rd.trackers_blocked}. Le visite non sono arrivate agli analytics del sito, salvo tracciamenti fatti dal server sulla richiesta della pagina.`);
+      else limits.push('Blocco dei tracker disattivato nella configurazione: le visite del rendering possono comparire negli analytics del sito.');
+    }
     if (this.state.sample) limits.push(`Scansione a campione: visitate ${this.state.sample.picked} pagine scelte per tipologia su ${this.state.sample.candidates} indirizzi candidati. Le altre non sono state verificate.`);
     if (this.state.not_reached.count) limits.push(`${n(this.state.not_reached.count, 'indirizzo scoperto non è stato visitato', 'indirizzi scoperti non sono stati visitati')}: ${this.state.not_reached.reason}.`);
     for (const [reason, e] of Object.entries(this.state.excluded)) limits.push(`Fuori perimetro (${reason}): ${n(e.count, 'link', 'link')}, non visitati.`);
@@ -557,6 +731,22 @@ export class Crawler {
     this.state.ended_at = null;
     this.store.saveConfig(this.loaded.raw);
     this.sessionStart = Date.now();
+    const prevRendering = this.state.rendering;
+    this.state.rendering = { mode: 'disattivo', eligible: 0, rendered: prevRendering?.rendered ?? 0, browser: null, trackers_blocked: prevRendering?.trackers_blocked ?? 0, error: null };
+    if (this.cfg.rendering.attivo) {
+      try {
+        this.renderer = await Renderer.start(this.cfg);
+        // Stesso user agent per le richieste senza browser: il server risponde alle due letture allo stesso modo
+        this.ua = this.renderer.userAgent;
+        this.state.rendering.mode = 'tutte';
+        this.state.rendering.browser = `Chromium ${this.renderer.browserVersion}`;
+      } catch (e) {
+        this.state.rendering.mode = 'non-avviato';
+        this.state.rendering.error = (e as Error).message.split('\n')[0];
+        this.log(`Browser non avviato, la scansione prosegue senza rendering: ${this.state.rendering.error}`);
+      }
+    }
+    this.state.user_agent = this.ua;
     this.log(resumed ? `Ripresa della scansione (${this.state.cliente})` : `Avvio della scansione (${this.cfg.cliente}), user agent: ${this.ua}`);
 
     try {
@@ -577,7 +767,6 @@ export class Crawler {
         this.save();
       }
 
-      this.phase = 'scansione delle pagine';
       const follow = this.cfg.perimetro.seguiLink && this.cfg.modalita === 'completa';
       const worker = async () => {
         for (;;) {
@@ -602,16 +791,24 @@ export class Crawler {
           }
         }
       };
-      await Promise.all(Array.from({ length: this.cfg.cortesia.paralleli }, worker));
+      // Lettura del sorgente e rendering si alternano: il rendering può scoprire link che esistono solo dopo
+      // JavaScript, e quelli tornano in coda per la lettura.
+      for (;;) {
+        this.phase = 'scansione delle pagine';
+        await Promise.all(Array.from({ length: this.cfg.cortesia.paralleli }, worker));
+        if (this.stopping || !this.renderer) break;
+        await this.renderPhase(follow);
+        if (this.stopping || this.queuedCount() === 0 || this.fetched >= this.cfg.perimetro.maxPagine) break;
+      }
 
       const left = [...this.entries.keys()].filter((u) => !this.doneUrls.has(u));
-      const paused = this.stopping && left.length > 0;
+      const paused = this.stopping && (left.length > 0 || this.renderIncomplete);
       this.state.status = paused ? 'in-pausa' : 'completata';
       this.state.not_reached = paused || !left.length
         ? { count: 0, reason: null, examples: [] }
         : { count: left.length, reason: `raggiunto il limite di ${this.cfg.perimetro.maxPagine} pagine`, examples: left.slice(0, 20) };
       if (!paused) this.state.ended_at = new Date().toISOString();
-      this.buildLimits(RunStore.readPages(this.runDir));
+      this.buildLimits(RunStore.readPages(this.runDir), RunStore.readRender(this.runDir));
       this.phase = paused ? 'in pausa' : 'completata';
       this.log(paused ? `Scansione messa in pausa: ${this.doneUrls.size} visitati, ${left.length} in coda` : `Scansione completata: ${this.doneUrls.size} indirizzi`);
     } catch (e) {
@@ -623,6 +820,7 @@ export class Crawler {
       this.save();
       this.emit(true);
       this.store.close();
+      await this.renderer?.close();
     }
     return this.state;
   }

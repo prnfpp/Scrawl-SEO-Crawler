@@ -6,9 +6,9 @@ per indirizzo, i link, i problemi. Descrive fatti e cause; raccomandazioni e pri
 Riusa il motore di navigazione di [Scookie](https://github.com/prnfpp/Scookie---Scanner-Cookier) (browser,
 anti-bot, banner, tipologie di pagina, stile dei rapporti).
 
-> **Stato: passo 2 di 8.** Funzionano la scansione (coda, perimetro, pausa e ripresa, salvataggio) e l'interfaccia.
-> L'analisi della pagina, il rendering con il browser, i controlli di sito, le prestazioni, l'incrocio con Search
-> Console e GA4 e il rapporto arrivano nei passi successivi.
+> **Stato: passo 3 di 8.** Funzionano la scansione, l'analisi di ogni pagina e il confronto tra l'HTML del server e
+> la pagina dopo JavaScript. Controlli di sito, grafo dei link e duplicati, prestazioni, incrocio con Search Console
+> e GA4 e rapporto per il cliente arrivano nei passi successivi.
 
 ## Installazione (una volta sola)
 
@@ -18,7 +18,10 @@ Servono [Node.js](https://nodejs.org) 22 o successivo e Git.
 git clone <indirizzo del repository>
 cd scrawl
 npm install
+npx playwright install chromium
 ```
+
+Se Scookie è già installato sullo stesso computer, il browser è già presente e l'ultimo comando non scarica nulla.
 
 ## Uso
 
@@ -38,11 +41,24 @@ restano in locale (`clienti/` e `runs/`, esclusi da git). Per chiudere: `Ctrl+C`
 
 ## Cosa fa oggi
 
-Per ogni indirizzo: codice di risposta, catena dei redirect (singolo, in catena, in loop), destinazione finale,
-blocco da robots.txt, presenza in sitemap, profondità, tipologia di pagina, link in uscita con testo di
-ancoraggio e nofollow.
+Ogni indirizzo viene letto due volte, e lo stesso estrattore gira su entrambe le letture:
 
-Legge l'HTML ricevuto dal server, senza eseguire JavaScript: nessuna visita arriva agli analytics del cliente.
+1. **HTML del server**, senza eseguire JavaScript: codice di risposta, catena dei redirect, intestazioni.
+2. **Pagina dopo JavaScript**, con il browser di Scookie.
+
+Per ogni pagina: indicizzabilità con il motivo (robots.txt, noindex, canonical, redirect, errori), title e
+description, H1 e gerarchia dei titoli, parole del contenuto principale, lingua e hreflang, immagini, link con testo
+di ancoraggio e posizione, dati strutturati. E il confronto: cosa cambia dopo JavaScript e cosa esiste solo dopo.
+
+**Quali pagine si renderizzano.** Fino a 500 pagine, tutte. Sopra: 20 pagine per tipologia, più quelle il cui
+sorgente è sospetto (title assente, contenuto scarso, contenitore dell'applicazione vuoto, pochi link rispetto
+alla tipologia); se in una tipologia almeno il 30% del campione cambia dopo JavaScript, tutte le sue pagine. Ogni
+riga dice se è stata renderizzata e perché.
+
+**Analytics del cliente.** Durante il rendering le richieste verso statistiche, pubblicità e registrazione delle
+sessioni sono bloccate, anche quando passano dal dominio del cliente (`/g/collect`, `matomo.php`). Il banner di
+consenso non viene mai accettato. Ogni riga riporta quante richieste sono state fermate. Limite: un tracciamento
+fatto dal server sulla richiesta della pagina non si può bloccare; per quello si filtra lo user agent `ScrawlSEO`.
 
 ## Rispetto dei siti
 

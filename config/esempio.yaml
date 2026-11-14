@@ -39,6 +39,11 @@ cortesia:
   nomeCrawler: ScrawlSEO     # nome nello user agent e per le regole di robots.txt
   contatto: mailto:seo@esempio.it
 
-rendering:                   # dal passo 3
-  soglia: 500                # sotto questo numero di pagine si renderizza tutto con il browser
-  perModello: 20
+rendering:
+  attivo: true               # confronto tra HTML del server e pagina dopo JavaScript
+  soglia: 500                # fino a questo numero di pagine si renderizzano tutte
+  perModello: 20             # sopra la soglia: pagine per tipologia nel campione
+  attesaMs: 1500             # attesa dopo il caricamento, per gli script lenti
+  bloccaTracker: true        # le visite non arrivano agli analytics del cliente
+  # trackerExtra: [stats.esempio.it]   # altri host di tracciamento da bloccare
+  # canale: chrome           # chromium (incluso) | chrome | msedge

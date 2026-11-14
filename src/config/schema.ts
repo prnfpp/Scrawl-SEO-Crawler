@@ -88,11 +88,25 @@ export const configSchema = z
       })
       .prefault({}),
 
-    /** Rendering con browser (dal passo 3): sotto la soglia si renderizza tutto. */
+    /**
+     * Rendering con browser: confronto tra l'HTML del server e il DOM dopo JavaScript. Sotto la soglia si
+     * renderizzano tutte le pagine; sopra, un campione per modello di pagina più le pagine il cui sorgente è sospetto.
+     */
     rendering: z
       .object({
+        attivo: z.boolean().default(true),
         soglia: z.number().int().min(0).default(500),
         perModello: z.number().int().min(1).default(20),
+        /** Attesa dopo il caricamento, per gli script che scrivono la pagina in ritardo. */
+        attesaMs: z.number().int().min(0).max(30000).default(1500),
+        timeoutMs: z.number().int().min(5000).max(180000).default(45000),
+        /** Blocca le richieste verso statistiche e pubblicità: le visite non arrivano agli analytics del cliente. */
+        bloccaTracker: z.boolean().default(true),
+        /** Altri host da bloccare (es. un endpoint di tracciamento sul dominio del cliente). */
+        trackerExtra: z.array(z.string()).default([]),
+        /** Browser: chromium (incluso), chrome o msedge (installati sul computer). */
+        canale: z.enum(['chromium', 'chrome', 'msedge']).default('chromium'),
+        viewport: z.object({ width: z.number().int(), height: z.number().int() }).default({ width: 1366, height: 900 }),
       })
       .prefault({}),
   })
