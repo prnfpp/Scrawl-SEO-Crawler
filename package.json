@@ -1,0 +1,26 @@
+{
+  "name": "scrawl",
+  "version": "0.1.0",
+  "description": "Crawler SEO tecnico: base dati tecnica per la pre-analisi SEO e GEO. Riusa il motore di navigazione di Scookie.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "bin": { "scrawl": "dist/src/cli.js" },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "interfaccia": "node dist/src/cli.js",
+    "start": "npm run build && node dist/src/cli.js",
+    "test": "npm run build && node --test --test-concurrency=1 \"dist/test/*.test.js\""
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "scookie": "file:../scookie---scanner-cookier",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

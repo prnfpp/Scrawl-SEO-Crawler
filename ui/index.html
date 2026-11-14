@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrawl</title>
+<style>
+/* Stessa lingua visiva di Scookie: barra marrone, area di lavoro chiara, card bianche, una sola azione primaria
+   (azzurra) per schermata. Nessuna risorsa esterna: lo strumento è locale. */
+:root {
+  --bg: #F8F9FA; --card: #FFFFFF; --warm: #F3EEE9; --ink: #4A3B32; --ink-2: #6E5D53; --line: #E4DCD5;
+  --primary: #2563EB; --primary-ink: #FFFFFF; --accent: #3B82F6; --accent-soft: #E6EFFE;
+  --header: #4A3B32; --header-ink: #F8F4F0;
+  --ok: #2F7D5B; --ok-soft: #E3F1EA; --warn: #A86A12; --warn-soft: #FBF0DC; --bad: #A8452F; --bad-soft: #F8E6E1; --info: #6E5D53; --info-soft: #EFE9E4;
+  --shadow: 0 1px 2px rgba(74,59,50,.06), 0 6px 18px rgba(74,59,50,.06);
+  --f-display: "Avenir Next", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --f-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #1B1714; --card: #251F1B; --warm: #2E2621; --ink: #F1EAE3; --ink-2: #C3B4A8; --line: #3D332C;
+  --primary: #3B82F6; --accent: #60A5FA; --accent-soft: #1E2B44; --header: #120F0D; --header-ink: #F1EAE3;
+  --ok: #6CC49A; --ok-soft: #1D3229; --warn: #E2A84B; --warn-soft: #3A2D16; --bad: #E58A73; --bad-soft: #3D231C; --info: #C3B4A8; --info-soft: #322A24;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25); color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.2; margin: 0; text-wrap: balance; }
+h1 { font-size: 1.55rem; font-weight: 750; letter-spacing: -.01em; }
+h2 { font-size: 1.12rem; font-weight: 700; }
+h3 { font-size: .98rem; font-weight: 700; }
+p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+code, .mono { font-family: var(--f-mono); font-size: .86em; }
+.muted { color: var(--ink-2); }
+.small { font-size: .86rem; }
+.eyebrow { font-size: .72rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+
+header.top { position: sticky; top: 0; z-index: 5; background: var(--header); color: var(--header-ink); }
+.top-in { max-width: 1120px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.brand { font: 800 1.15rem var(--f-display); display: flex; align-items: baseline; gap: 8px; }
+.brand small { font: 500 .78rem var(--f-body); opacity: .7; }
+nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+nav.tabs button { background: transparent; border: 0; color: var(--header-ink); opacity: .78; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+nav.tabs button:hover { opacity: 1; background: rgba(255,255,255,.08); }
+nav.tabs button[aria-current="page"] { opacity: 1; background: rgba(255,255,255,.15); }
+.status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: .86rem; background: rgba(255,255,255,.1); padding: 6px 12px 6px 9px; border-radius: 999px; border: 0; color: inherit; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #8FD4B0; flex: none; }
+.status.run .dot { background: #93C5FD; animation: pulse 1.4s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .status.run .dot { animation: none; } }
+
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 80px; display: grid; gap: 20px; }
+section { display: grid; gap: 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 22px; min-width: 0; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.stack { display: grid; gap: 14px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: end; }
+#projects { align-items: stretch; }
+#tab-risultati table { min-width: 900px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 9px; padding: 9px 16px; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--ink); text-decoration: none; }
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn[disabled] { opacity: .55; cursor: progress; }
+.btn.link { border: 0; background: none; padding: 4px 6px; color: var(--primary); }
+label.f { display: grid; gap: 5px; font-weight: 600; font-size: .9rem; }
+label.f .hint { font-weight: 400; color: var(--ink-2); font-size: .84rem; }
+input[type=text], input[type=url], input[type=number], select, textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
+textarea { min-height: 74px; resize: vertical; font-family: var(--f-mono); font-size: .84rem; }
+label.check { display: flex; gap: 9px; align-items: flex-start; font-size: .92rem; }
+label.check input { margin-top: 4px; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 14px; }
+legend { font: 700 1rem var(--f-display); padding: 0; margin-bottom: 4px; }
+details.adv { border-top: 1px solid var(--line); padding-top: 12px; }
+details.adv summary { cursor: pointer; font-weight: 600; }
+details.adv[open] summary { margin-bottom: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg label { padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: .9rem; }
+.seg input { position: absolute; opacity: 0; }
+.seg label:has(input:checked) { background: var(--accent-soft); color: var(--primary); }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+.note { border-radius: 10px; padding: 10px 14px; font-size: .9rem; background: var(--info-soft); }
+.note.warn { background: var(--warn-soft); color: var(--warn); }
+.note.bad { background: var(--bad-soft); color: var(--bad); }
+.note ul { margin: 6px 0 0; padding-left: 18px; }
+.empty { text-align: center; padding: 38px 20px; display: grid; gap: 10px; justify-items: center; }
+.pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 650; background: var(--info-soft); color: var(--info); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.warn { background: var(--warn-soft); color: var(--warn); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.run { background: var(--accent-soft); color: var(--primary); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.kpi { background: var(--warm); border-radius: 12px; padding: 12px 14px; }
+.kpi b { display: block; font: 750 1.5rem var(--f-display); font-variant-numeric: tabular-nums; }
+.kpi span { font-size: .82rem; color: var(--ink-2); }
+.bar { height: 10px; border-radius: 10px; background: var(--warm); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--primary); width: 0; transition: width .4s; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 12px; font-size: .86rem; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--primary); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .86rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--warm); font-weight: 650; white-space: nowrap; position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td.u { min-width: 260px; max-width: 460px; overflow-wrap: anywhere; font-family: var(--f-mono); font-size: .8rem; }
+td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.code { font-weight: 700; font-variant-numeric: tabular-nums; }
+.code.c2 { color: var(--ok); } .code.c3 { color: var(--warn); } .code.c4, .code.c5, .code.ce { color: var(--bad); }
+pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm); border-radius: 10px; padding: 10px 12px; font: .78rem/1.5 var(--f-mono); white-space: pre-wrap; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--header); color: var(--header-ink); padding: 10px 18px; border-radius: 10px; box-shadow: var(--shadow); max-width: min(92vw, 640px); z-index: 20; }
+.toast.bad { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Scrawl <small id="ver"></small></div>
+    <nav class="tabs" aria-label="Sezioni">
+      <button data-tab="progetti">Progetti</button>
+      <button data-tab="scansione">Scansione</button>
+      <button data-tab="risultati">Risultati</button>
+    </nav>
+    <button class="status" id="status" title="Vai alla scansione"><span class="dot"></span><span id="status-text">Nessuna scansione in corso</span></button>
+  </div>
+</header>
+
+<main>
+  <!-- PROGETTI -->
+  <section id="tab-progetti">
+    <div class="row spread">
+      <div><h1>Progetti</h1><p class="muted">Un progetto per sito: dove partire, cosa includere, quanto andare a fondo.</p></div>
+      <button class="btn primary" id="new-project">+ Nuovo progetto</button>
+    </div>
+    <div id="projects" class="grid2"></div>
+  </section>
+
+  <!-- MODULO -->
+  <section id="tab-modulo" hidden>
+    <div class="row spread">
+      <div><p class="eyebrow"><button class="btn link" id="back-projects">Progetti</button> ›</p><h1 id="form-title">Nuovo progetto</h1></div>
+    </div>
+    <form id="form" class="stack" novalidate>
+      <div class="card stack">
+        <fieldset>
+          <legend>1 · Da dove partire</legend>
+          <label class="f">Cliente<input type="text" name="cliente" required autocomplete="off" placeholder="Esempio Srl"></label>
+          <label class="f">Dominio di partenza<span class="hint">La scansione parte da qui e segue i link. Se manca https:// viene aggiunto.</span><input type="text" name="dominio" inputmode="url" autocomplete="off" placeholder="www.esempio.it"></label>
+          <label class="check"><input type="checkbox" name="sitemapAutomatica" checked><span>Leggi anche la sitemap dichiarata dal sito (robots.txt o /sitemap.xml)</span></label>
+          <details class="adv">
+            <summary>Sitemap o elenco di indirizzi specifici</summary>
+            <div class="grid2">
+              <label class="f">Sitemap<span class="hint">Una per riga. Si può usare al posto del dominio.</span><textarea name="sitemap" placeholder="https://www.esempio.it/sitemap.xml"></textarea></label>
+              <label class="f">Elenco di indirizzi<span class="hint">Uno per riga: vengono scansionati sempre.</span><textarea name="url" placeholder="https://www.esempio.it/contatti"></textarea></label>
+            </div>
+          </details>
+        </fieldset>
+      </div>
+
+      <div class="card stack">
+        <fieldset>
+          <legend>2 · Perimetro</legend>
+          <label class="f">Sottodomini
+            <select name="sottodomini">
+              <option value="escludi">Solo questo sito (con e senza www)</option>
+              <option value="includi">Tutti i sottodomini dello stesso dominio</option>
+              <option value="elenco">Solo i sottodomini che indico</option>
+            </select>
+          </label>
+          <label class="f" id="host-list" hidden>Sottodomini da includere<span class="hint">Uno per riga, es. shop.esempio.it</span><textarea name="hosts"></textarea></label>
+          <div class="grid2">
+            <label class="f">Solo queste cartelle<span class="hint">Una per riga, es. /it/ — vuoto = tutto il sito</span><textarea name="includi" placeholder="/it/"></textarea></label>
+            <label class="f">Cartelle da escludere<span class="hint">Una per riga, es. /area-riservata</span><textarea name="escludi" placeholder="/area-riservata"></textarea></label>
+          </div>
+          <div class="grid2">
+            <label class="f">Numero massimo di pagine<input type="number" name="maxPagine" min="1" max="50000" value="5000"></label>
+            <label class="f">Livelli di profondità<span class="hint">Clic dal punto di partenza</span><input type="number" name="maxProfondita" min="0" max="50" value="12"></label>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="card stack">
+        <fieldset>
+          <legend>3 · Modalità</legend>
+          <div class="seg" role="radiogroup" aria-label="Modalità di scansione">
+            <label><input type="radio" name="modalita" value="completa" checked>Completa</label>
+            <label><input type="radio" name="modalita" value="campione">A campione</label>
+          </div>
+          <p class="muted small" id="mode-hint"></p>
+          <div class="grid2" id="sample-opts" hidden>
+            <label class="f">Pagine per tipologia<input type="number" name="perTipo" min="1" max="200" value="5"></label>
+            <label class="f">Pagine in totale<input type="number" name="campioneMax" min="1" max="2000" value="60"></label>
+            <label class="f" style="grid-column:1/-1">Regole per le tipologie<span class="hint">Facoltative, una per riga: nome = inizio del percorso. Senza regole si usa la struttura degli indirizzi.</span><textarea name="tipi" placeholder="prodotto = ^/(prodotti|shop)/&#10;articolo = ^/(blog|news)/"></textarea></label>
+          </div>
+        </fieldset>
+        <details class="adv">
+          <summary>Rispetto del sito</summary>
+          <div class="stack">
+            <div class="grid2">
+              <label class="f">Pausa tra le richieste (millisecondi)<input type="number" name="pausaMs" min="0" max="60000" value="500"></label>
+              <label class="f">Richieste in parallelo<input type="number" name="paralleli" min="1" max="8" value="2"></label>
+            </div>
+            <label class="f">Contatto dichiarato<span class="hint">Compare nello user agent, così chi gestisce il sito sa chi scrivere. Es. mailto:seo@agenzia.it</span><input type="text" name="contatto" autocomplete="off"></label>
+            <label class="check"><input type="checkbox" name="rispettaRobots" checked><span>Rispetta robots.txt</span></label>
+            <p class="note warn" id="robots-warn" hidden>Con robots.txt ignorato lo strumento visita anche le pagine vietate ai crawler. Va fatto solo sui siti dei clienti, con il loro accordo: il rapporto lo dichiara.</p>
+          </div>
+        </details>
+      </div>
+
+      <p class="note bad" id="form-error" role="alert" hidden></p>
+      <div class="row">
+        <button type="submit" class="btn primary" data-go="1">Salva e avvia la scansione</button>
+        <button type="submit" class="btn">Salva</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- SCANSIONE -->
+  <section id="tab-scansione" hidden>
+    <div id="scan-empty" class="card empty">
+      <h2>Nessuna scansione in corso</h2>
+      <p class="muted">Avviane una da un progetto, oppure riprendi una scansione in pausa dai risultati.</p>
+      <button class="btn primary" data-goto="progetti">Vai ai progetti</button>
+    </div>
+    <div id="scan-live" class="stack" hidden>
+      <div class="row spread">
+        <div><h1 id="scan-title">Scansione</h1><p class="muted" id="scan-phase"></p></div>
+        <button class="btn" id="pause">Metti in pausa</button>
+      </div>
+      <div class="card stack">
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="bar"><i></i></div>
+        <div class="kpis">
+          <div class="kpi"><b id="k-done">0</b><span>indirizzi visitati</span></div>
+          <div class="kpi"><b id="k-queue">0</b><span>in coda</span></div>
+          <div class="kpi"><b id="k-rate">–</b><span>pagine al minuto</span></div>
+          <div class="kpi"><b id="k-eta">–</b><span>tempo rimanente stimato</span></div>
+        </div>
+        <div class="chips" id="k-status"></div>
+        <p class="muted small">Puoi mettere in pausa o chiudere il programma in qualsiasi momento: ciò che è stato scansionato resta salvato e la scansione riprende da dove era arrivata.</p>
+      </div>
+      <div class="card stack">
+        <h2>Ultimi indirizzi</h2>
+        <div class="tablewrap"><table><thead><tr><th>Codice</th><th>Indirizzo</th><th>Nota</th></tr></thead><tbody id="recent"></tbody></table></div>
+        <details class="adv"><summary>Registro</summary><pre class="log" id="log"></pre></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- RISULTATI -->
+  <section id="tab-risultati" hidden>
+    <div id="runs-view" class="stack">
+      <div><h1>Risultati</h1><p class="muted">Tutte le scansioni, dalla più recente. Quelle in pausa o interrotte si possono riprendere.</p></div>
+      <div id="runs" class="stack"></div>
+    </div>
+    <div id="run-view" class="stack" hidden>
+      <div class="row spread">
+        <div><p class="eyebrow"><button class="btn link" id="back-runs">Risultati</button> ›</p><h1 id="run-title"></h1><p class="muted" id="run-sub"></p></div>
+        <div class="row" id="run-actions"></div>
+      </div>
+      <div class="note warn" id="run-limits" hidden></div>
+      <div class="card stack">
+        <div class="chips" id="filters" role="group" aria-label="Filtra per esito"></div>
+        <div class="grid2">
+          <label class="f">Cerca nell'indirizzo<input type="text" id="q" autocomplete="off" placeholder="/prodotti/"></label>
+          <label class="f">Tipologia di pagina<select id="tpl"></select></label>
+        </div>
+        <p class="muted small" id="count"></p>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Codice</th><th>Indirizzo</th><th>Destinazione</th><th>Tipologia</th><th>Livello</th><th>Origine</th><th>Nota</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+        <button class="btn" id="more" hidden>Mostra altre</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+/** Crea un elemento: h('td', {class:'u'}, 'testo', figlio…). Il testo passa sempre da textContent. */
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === false || v == null) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+async function api(path, data) {
+  const res = await fetch(path, data === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) });
+  const json = await res.json().catch(() => ({ error: 'Risposta non leggibile' }));
+  if (!res.ok) throw new Error(json.error || 'Operazione non riuscita');
+  return json;
+}
+let toastTimer;
+function toast(msg, bad = false) {
+  const t = $('#toast');
+  t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), bad ? 9000 : 4000);
+}
+/** Esegue un'azione legata a un pulsante: stato di attesa, niente doppi invii, errore in chiaro. */
+async function act(btn, fn) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try { await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; }
+}
+const nf = new Intl.NumberFormat('it-IT');
+const dt = (iso) => iso ? new Date(iso).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+function dur(s) {
+  if (s == null) return '–';
+  if (s < 90) return `${Math.max(1, Math.round(s))} s`;
+  if (s < 5400) return `${Math.round(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+}
+const STATUS = { 'in-corso': ['In corso', 'run'], 'in-pausa': ['In pausa', 'warn'], completata: ['Completata', 'ok'], interrotta: ['Interrotta', 'bad'] };
+const CLASSES = { ok: 'Risposta corretta (2xx)', redirect: 'Redirect (3xx)', client: 'Non trovate o vietate (4xx)', server: 'Errore del server (5xx)', errore: 'Nessuna risposta', bloccate: 'Vietate da robots.txt' };
+const SOURCE = { partenza: 'punto di partenza', link: 'link', sitemap: 'sitemap', elenco: 'elenco', redirect: 'redirect' };
+const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
+const withScheme = (u) => (!u ? u : /^https?:\/\//i.test(u) ? u : 'https://' + u.replace(/^\/+/, ''));
+/** Cartella scritta in chiaro (/blog/) → regola sull'inizio del percorso; chi scrive una regex (inizia con ^) la tiene. */
+const toRule = (s) => (s.startsWith('^') ? s : '^' + (s.startsWith('/') ? s : '/' + s).replace(/[.*+?${}()|[\]\\]/g, '\\$&'));
+const fromRule = (s) => (/^\^\/[\w\-/.\\]*$/.test(s) ? s.slice(1).replace(/\\(.)/g, '$1') : s);
+
+// ---------- navigazione ----------
+let active = null; // { id, progress }
+function show(tab) {
+  for (const s of $$('main > section')) s.hidden = s.id !== 'tab-' + tab;
+  const nav = tab === 'modulo' ? 'progetti' : tab;
+  for (const b of $$('nav.tabs button')) b.toggleAttribute('aria-current', b.dataset.tab === nav), b.dataset.tab === nav ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
+  if (tab === 'progetti') loadProjects();
+  if (tab === 'risultati') { $('#run-view').hidden = true; $('#runs-view').hidden = false; loadRuns(); }
+  if (tab === 'scansione') renderScan();
+  window.scrollTo(0, 0);
+}
+for (const b of $$('nav.tabs button')) b.addEventListener('click', () => show(b.dataset.tab));
+document.addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) show(g.dataset.goto); });
+$('#status').addEventListener('click', () => show('scansione'));
+
+// ---------- progetti ----------
+let projects = [];
+async function loadProjects() {
+  const box = $('#projects');
+  try { projects = await api('/api/progetti'); } catch (e) { toast(e.message, true); return; }
+  box.replaceChildren();
+  if (!projects.length) {
+    box.append(h('div', { class: 'card empty', style: 'grid-column:1/-1' }, h('h2', {}, 'Nessun progetto'), h('p', { class: 'muted' }, 'Crea il primo: bastano il nome del cliente e il dominio.'), h('button', { class: 'btn primary', onclick: () => openForm(null) }, '+ Nuovo progetto')));
+    return;
+  }
+  for (const p of projects) {
+    const c = p.config, r = p.lastRun;
+    const start = c ? (c.partenza.dominio || c.partenza.sitemap[0] || c.partenza.url[0] || '') : '';
+    const resumable = r && (r.status === 'in-pausa' || r.status === 'interrotta');
+    box.append(h('div', { class: 'card stack' },
+      h('div', {}, h('h2', {}, c ? c.cliente : p.name), h('p', { class: 'muted small mono' }, start)),
+      p.error ? h('p', { class: 'note bad' }, 'Configurazione da correggere: ' + p.error) : h('p', { class: 'small' }, c.modalita === 'campione' ? `A campione · fino a ${c.campionamento.maxPagine} pagine` : `Completa · fino a ${nf.format(c.perimetro.maxPagine)} pagine`),
+      r ? h('p', { class: 'small' }, h('span', { class: 'pill ' + STATUS[r.status][1] }, STATUS[r.status][0]), ` ${dt(r.started_at)} · ${nf.format(r.pages)} indirizzi`) : h('p', { class: 'muted small' }, 'Mai scansionato'),
+      h('div', { class: 'row' },
+        resumable
+          ? h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi la scansione')
+          : h('button', { class: 'btn primary', disabled: !!p.error, onclick: (e) => act(e.currentTarget, () => startRun(p.name)) }, r ? 'Nuova scansione' : 'Avvia la scansione'),
+        h('button', { class: 'btn', onclick: () => openForm(p) }, 'Modifica'),
+        r ? h('button', { class: 'btn', onclick: () => openRun(r.id) }, 'Apri i risultati') : null)));
+  }
+}
+$('#new-project').addEventListener('click', () => openForm(null));
+$('#back-projects').addEventListener('click', () => show('progetti'));
+
+// ---------- modulo ----------
+const form = $('#form');
+let editing = null;
+function syncForm() {
+  $('#host-list').hidden = form.sottodomini.value !== 'elenco';
+  const sample = form.modalita.value === 'campione';
+  $('#sample-opts').hidden = !sample;
+  $('#mode-hint').textContent = sample
+    ? 'Visita alcune pagine per ogni tipologia (home, categorie, prodotti, articoli…), riconosciuta dalla struttura degli indirizzi. Veloce: utile per una prima lettura di un sito grande.'
+    : 'Visita tutte le pagine nel perimetro, fino ai limiti indicati sopra.';
+  $('#robots-warn').hidden = form.rispettaRobots.checked;
+}
+form.addEventListener('change', syncForm);
+form.dominio.addEventListener('blur', () => { form.dominio.value = withScheme(form.dominio.value.trim()); });
+function openForm(p) {
+  editing = p ? p.name : null;
+  form.reset();
+  $('#form-error').hidden = true;
+  $('#form-title').textContent = p ? (p.config ? p.config.cliente : p.name) : 'Nuovo progetto';
+  const c = p && p.config;
+  if (c) {
+    form.cliente.value = c.cliente;
+    form.dominio.value = c.partenza.dominio || '';
+    form.sitemapAutomatica.checked = c.partenza.sitemapAutomatica;
+    form.sitemap.value = c.partenza.sitemap.join('\n');
+    form.url.value = c.partenza.url.join('\n');
+    const sd = c.perimetro.sottodomini;
+    form.sottodomini.value = Array.isArray(sd) ? 'elenco' : sd;
+    form.hosts.value = Array.isArray(sd) ? sd.join('\n') : '';
+    form.includi.value = c.perimetro.includi.map(fromRule).join('\n');
+    form.escludi.value = c.perimetro.escludi.map(fromRule).join('\n');
+    form.maxPagine.value = c.perimetro.maxPagine;
+    form.maxProfondita.value = c.perimetro.maxProfondita;
+    form.modalita.value = c.modalita;
+    form.perTipo.value = c.campionamento.perTipo;
+    form.campioneMax.value = c.campionamento.maxPagine;
+    form.tipi.value = Object.entries(c.campionamento.tipi).map(([k, v]) => `${k} = ${v}`).join('\n');
+    form.pausaMs.value = c.cortesia.pausaMs;
+    form.paralleli.value = c.cortesia.paralleli;
+    form.contatto.value = c.cortesia.contatto;
+    form.rispettaRobots.checked = c.cortesia.rispettaRobots;
+    if (c.partenza.sitemap.length || c.partenza.url.length) form.querySelector('details').open = true;
+  }
+  syncForm();
+  show('modulo');
+  form.cliente.focus();
+}
+function readForm() {
+  const prev = (editing && projects.find((p) => p.name === editing)?.config) || {};
+  const tipi = {};
+  for (const l of lines(form.tipi.value)) { const i = l.indexOf('='); if (i > 0) tipi[l.slice(0, i).trim()] = l.slice(i + 1).trim(); }
+  const sd = form.sottodomini.value;
+  const cfg = {
+    ...prev,
+    cliente: form.cliente.value.trim(),
+    partenza: { sitemap: lines(form.sitemap.value).map(withScheme), url: lines(form.url.value).map(withScheme), sitemapAutomatica: form.sitemapAutomatica.checked },
+    perimetro: { ...(prev.perimetro || {}), sottodomini: sd === 'elenco' ? lines(form.hosts.value) : sd, includi: lines(form.includi.value).map(toRule), escludi: lines(form.escludi.value).map(toRule), maxPagine: Number(form.maxPagine.value), maxProfondita: Number(form.maxProfondita.value) },
+    modalita: form.modalita.value,
+    campionamento: { perTipo: Number(form.perTipo.value), maxPagine: Number(form.campioneMax.value), tipi },
+    cortesia: { ...(prev.cortesia || {}), pausaMs: Number(form.pausaMs.value), paralleli: Number(form.paralleli.value), contatto: form.contatto.value.trim(), rispettaRobots: form.rispettaRobots.checked },
+  };
+  const dom = withScheme(form.dominio.value.trim());
+  if (dom) cfg.partenza.dominio = dom;
+  return cfg;
+}
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const go = e.submitter?.dataset.go;
+  const err = $('#form-error');
+  act(e.submitter, async () => {
+    err.hidden = true;
+    const cfg = readForm();
+    if (!cfg.cliente) { err.textContent = 'Manca il nome del cliente.'; err.hidden = false; form.cliente.focus(); return; }
+    if (!cfg.partenza.dominio && !cfg.partenza.sitemap.length && !cfg.partenza.url.length) { err.textContent = 'Indica da dove partire: un dominio, una sitemap o un elenco di indirizzi.'; err.hidden = false; form.dominio.focus(); return; }
+    try {
+      const { name } = await api('/api/progetti', { name: editing || undefined, config: cfg });
+      if (go) await startRun(name); else { toast('Progetto salvato'); show('progetti'); }
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  });
+});
+
+// ---------- scansione ----------
+async function startRun(project) {
+  const { id } = await api('/api/scansioni', { project });
+  active = { id, progress: null, log: [] };
+  show('scansione');
+}
+async function resume(id) {
+  await api(`/api/scansioni/${id}/riprendi`, {});
+  active = { id, progress: null, log: [] };
+  show('scansione');
+}
+$('#pause').addEventListener('click', (e) => act(e.currentTarget, async () => {
+  await api(`/api/scansioni/${active.id}/pausa`, {});
+  toast('In pausa appena finiscono le richieste in corso');
+}));
+function renderStatus() {
+  const s = $('#status'), p = active?.progress;
+  s.classList.toggle('run', !!active);
+  $('#status-text').textContent = active ? (p ? `Scansione in corso · ${nf.format(p.done)} indirizzi` : 'Scansione in avvio…') : 'Nessuna scansione in corso';
+}
+function renderScan() {
+  renderStatus();
+  $('#scan-empty').hidden = !!active;
+  $('#scan-live').hidden = !active;
+  if (!active) return;
+  const p = active.progress;
+  $('#scan-title').textContent = 'Scansione · ' + active.id.split('/')[0];
+  if (!p) { $('#scan-phase').textContent = 'Avvio…'; return; }
+  $('#scan-phase').textContent = p.phase.charAt(0).toUpperCase() + p.phase.slice(1);
+  const total = Math.min(p.limit, p.done + p.queued + p.inFlight) || 1;
+  const pct = Math.min(100, Math.round((p.done / total) * 100));
+  $('#bar i').style.width = pct + '%';
+  $('#bar').setAttribute('aria-valuenow', pct);
+  $('#k-done').textContent = nf.format(p.done);
+  $('#k-queue').textContent = nf.format(p.queued);
+  $('#k-rate').textContent = p.perMinute ? nf.format(p.perMinute) : '–';
+  $('#k-eta').textContent = dur(p.etaSeconds);
+  $('#k-status').replaceChildren(...Object.entries(p.byStatus).filter(([, n]) => n).map(([k, n]) => h('span', { class: 'pill ' + (k === 'ok' ? 'ok' : k === 'redirect' || k === 'bloccate' ? 'warn' : 'bad') }, `${CLASSES[k]}: ${nf.format(n)}`)));
+  $('#recent').replaceChildren(...p.recent.map((r) => h('tr', {}, h('td', {}, codeEl(r.status, r.note.startsWith('vietata'))), h('td', { class: 'u' }, r.url), h('td', { class: 'small' }, r.note))));
+  $('#log').textContent = active.log.join('\n');
+}
+function codeEl(status, blocked) {
+  if (blocked) return h('span', { class: 'code c3' }, 'robots');
+  if (status == null) return h('span', { class: 'code ce' }, 'errore');
+  return h('span', { class: 'code c' + String(status)[0] }, status);
+}
+const es = new EventSource('/api/eventi');
+es.addEventListener('progress', (e) => { const d = JSON.parse(e.data); if (!active || active.id !== d.id) active = { id: d.id, log: [] }; active.progress = d.progress; if (!$('#tab-scansione').hidden) renderScan(); else renderStatus(); });
+es.addEventListener('log', (e) => { const d = JSON.parse(e.data); if (active && active.id === d.id) { active.log.push(d.message); if (active.log.length > 200) active.log.shift(); } });
+es.addEventListener('end', (e) => {
+  const d = JSON.parse(e.data);
+  active = null; renderStatus();
+  toast(d.status === 'completata' ? 'Scansione completata' : d.status === 'in-pausa' ? 'Scansione in pausa: si può riprendere dai risultati' : 'Scansione interrotta: ' + (d.error || 'si può riprendere dai risultati'), d.status === 'interrotta');
+  if (!$('#tab-scansione').hidden) { if (d.status === 'completata') openRun(d.id); else show('risultati'); }
+});
+
+// ---------- risultati ----------
+async function loadRuns() {
+  let runs;
+  try { runs = await api('/api/scansioni'); } catch (e) { toast(e.message, true); return; }
+  const box = $('#runs');
+  box.replaceChildren();
+  if (!runs.length) { box.append(h('div', { class: 'card empty' }, h('h2', {}, 'Ancora nessuna scansione'), h('button', { class: 'btn primary', 'data-goto': 'progetti' }, 'Vai ai progetti'))); return; }
+  for (const r of runs) {
+    const resumable = !r.live && (r.status === 'in-pausa' || r.status === 'interrotta');
+    box.append(h('div', { class: 'card row spread' },
+      h('div', {}, h('h2', {}, r.cliente), h('p', { class: 'small' }, h('span', { class: 'pill ' + STATUS[r.status][1] }, STATUS[r.status][0]), ` ${dt(r.started_at)} · ${nf.format(r.pages)} indirizzi · ${dur(r.elapsed_s)}`)),
+      h('div', { class: 'row' },
+        resumable ? h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi') : null,
+        r.live ? h('button', { class: 'btn primary', 'data-goto': 'scansione' }, 'Segui la scansione') : null,
+        h('button', { class: resumable || r.live ? 'btn' : 'btn primary', onclick: () => openRun(r.id) }, 'Apri'))));
+  }
+}
+let view = { id: null, filtro: '', q: '', modello: '', da: 0 };
+async function openRun(id) {
+  view = { id, filtro: '', q: '', modello: '', da: 0 };
+  $('#q').value = '';
+  for (const s of $$('main > section')) s.hidden = s.id !== 'tab-risultati';
+  for (const b of $$('nav.tabs button')) b.dataset.tab === 'risultati' ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
+  $('#runs-view').hidden = true; $('#run-view').hidden = false;
+  await loadRows(true);
+  window.scrollTo(0, 0);
+}
+$('#back-runs').addEventListener('click', () => show('risultati'));
+async function loadRows(reset) {
+  if (reset) view.da = 0;
+  let d;
+  try { d = await api(`/api/scansioni/${view.id}/pagine?filtro=${view.filtro}&q=${encodeURIComponent(view.q)}&modello=${encodeURIComponent(view.modello)}&da=${view.da}`); } catch (e) { toast(e.message, true); return; }
+  const r = d.run;
+  $('#run-title').textContent = r.cliente;
+  $('#run-sub').replaceChildren(h('span', { class: 'pill ' + STATUS[r.status][1] }, STATUS[r.status][0]), ` ${dt(r.started_at)} · ${nf.format(d.total)} indirizzi · ${dur(r.elapsed_s)}`);
+  const resumable = !r.live && (r.status === 'in-pausa' || r.status === 'interrotta');
+  const dl = (name, label) => h('a', { class: 'btn', href: `/api/scansioni/${view.id}/file?nome=${name}`, download: name }, label);
+  $('#run-actions').replaceChildren(
+    ...(resumable ? [h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi la scansione')] : []),
+    ...(r.exported ? [dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)'), dl('manifest.json', 'Manifest')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
+  const lim = $('#run-limits');
+  const items = [...r.limits, ...r.notes];
+  lim.hidden = !items.length;
+  lim.replaceChildren(h('b', {}, 'Cosa non è stato verificato'), h('ul', {}, items.map((t) => h('li', {}, t))));
+  $('#filters').replaceChildren(
+    h('button', { class: 'chip', 'aria-pressed': String(!view.filtro), onclick: () => { view.filtro = ''; loadRows(true); } }, `Tutti: ${nf.format(d.total)}`),
+    ...Object.entries(d.counts).filter(([, n]) => n).map(([k, n]) => h('button', { class: 'chip', 'aria-pressed': String(view.filtro === k), onclick: () => { view.filtro = view.filtro === k ? '' : k; loadRows(true); } }, `${CLASSES[k]}: ${nf.format(n)}`)));
+  const tpl = $('#tpl');
+  tpl.replaceChildren(h('option', { value: '' }, 'Tutte le tipologie'), ...Object.entries(d.templates).sort((a, b) => b[1] - a[1]).map(([k, n]) => h('option', { value: k, selected: k === view.modello }, `${k} (${nf.format(n)})`)));
+  const trs = d.rows.map((p) => h('tr', {},
+    h('td', {}, codeEl(p.status, !p.fetched)),
+    h('td', { class: 'u' }, p.url),
+    h('td', { class: 'u' }, p.final_url && p.final_url !== p.url ? `${p.final_url}${p.final_status ? ` (${p.final_status})` : ''}` : ''),
+    h('td', {}, p.template),
+    h('td', { class: 'n' }, p.depth ?? '–'),
+    h('td', {}, SOURCE[p.source] || p.source),
+    h('td', { class: 'small' }, p.error || (!p.fetched ? p.robots_txt_rule : p.redirect_type === 'catena' ? `catena di ${p.redirect_hops} redirect` : p.redirect_type === 'loop' ? 'redirect in loop' : ''))));
+  if (reset) $('#rows').replaceChildren(...trs); else $('#rows').append(...trs);
+  if (!d.rows.length && reset) $('#rows').append(h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'Nessun indirizzo con questi filtri.')));
+  const shown = view.da + d.rows.length;
+  $('#count').textContent = `${nf.format(Math.min(shown, d.matching))} di ${nf.format(d.matching)} indirizzi`;
+  $('#more').hidden = shown >= d.matching;
+}
+let qTimer;
+$('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { view.q = e.target.value.trim(); loadRows(true); }, 250); });
+$('#tpl').addEventListener('change', (e) => { view.modello = e.target.value; loadRows(true); });
+$('#more').addEventListener('click', (e) => act(e.currentTarget, async () => { view.da += 100; await loadRows(false); }));
+
+// ---------- avvio ----------
+(async () => {
+  try {
+    const st = await api('/api/stato');
+    $('#ver').textContent = 'v' + st.version;
+    if (st.active) active = { id: st.active.id, progress: st.active.progress, log: st.active.log };
+  } catch (e) { toast('Scrawl non risponde: riavvialo dal Terminale con "npm start".', true); }
+  show(active ? 'scansione' : 'progetti');
+})();
+</script>
+</body>
+</html>

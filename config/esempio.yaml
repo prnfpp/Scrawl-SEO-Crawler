@@ -1,0 +1,44 @@
+# Configurazione di esempio. I progetti creati dall'interfaccia sono file come questo, in clienti/<nome>.yaml
+# (la cartella clienti/ è esclusa da git). Si possono anche scrivere a mano.
+
+cliente: Esempio Srl
+output: ../runs              # relativo a questo file
+
+partenza:                    # almeno uno tra dominio, sitemap, url
+  dominio: https://www.esempio.it/
+  sitemapAutomatica: true    # legge le sitemap dichiarate in robots.txt (o /sitemap.xml)
+  # sitemap:
+  #   - https://www.esempio.it/sitemap_index.xml
+  # url:                     # elenco di indirizzi, scansionati sempre
+  #   - https://www.esempio.it/contatti
+
+perimetro:
+  sottodomini: escludi       # escludi | includi | elenco di host, es. [shop.esempio.it]
+  includi: []                # regex sul percorso; se non vuoto, si scansiona solo ciò che corrisponde
+  escludi: ["^/area-riservata"]
+  maxPagine: 5000
+  maxProfondita: 12          # livelli dal punto di partenza
+  seguiLink: true
+  # parametriIgnorati: [utm_*, gclid, fbclid]   # tolti dagli indirizzi prima di accodarli
+
+modalita: completa           # completa | campione
+
+campionamento:               # usato solo con modalita: campione
+  perTipo: 5
+  maxPagine: 60
+  tipi:                      # nome -> regex sul percorso (facoltativo)
+    prodotto: "^/(prodotti|shop)/"
+    articolo: "^/(blog|news)/"
+
+cortesia:
+  pausaMs: 500               # pausa minima tra due richieste allo stesso host
+  paralleli: 2
+  rispettaRobots: true       # false solo sui siti dei clienti, con il loro accordo: il rapporto lo dichiara
+  maxCrawlDelayMs: 10000     # tetto al Crawl-delay di robots.txt
+  timeoutMs: 30000
+  nomeCrawler: ScrawlSEO     # nome nello user agent e per le regole di robots.txt
+  contatto: mailto:seo@esempio.it
+
+rendering:                   # dal passo 3
+  soglia: 500                # sotto questo numero di pagine si renderizza tutto con il browser
+  perModello: 20
