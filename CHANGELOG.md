@@ -16,6 +16,8 @@ Le modifiche al formato dei file di dati (input della skill SEO) hanno una voce 
 - Lo user agent è quello del browser reale, uguale per le due letture.
 - Interfaccia: filtri "non indicizzabili", "cambiano dopo JavaScript", "dati strutturati con errori"; scheda della
   pagina con sorgente e renderizzato affiancati.
+- **Nessuna dipendenza da Scookie.** Le parti del suo motore che servono sono copiate in `src/scookie/` e
+  `data/trackers.yaml` (provenienza in `src/scookie/LEGGIMI.md`). Scookie non va modificato.
 - **Formato** (`schema_version` 0): 54 colonne nuove in `pages` dopo le 21 esistenti, `placement` in `links`,
   `rendering` nel manifest. Corretto il documento: i CSV usano `;` con BOM, non la virgola (era già così).
 

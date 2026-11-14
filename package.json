@@ -1,7 +1,7 @@
 {
   "name": "scrawl",
   "version": "0.1.0",
-  "description": "Crawler SEO tecnico: base dati tecnica per la pre-analisi SEO e GEO. Riusa il motore di navigazione di Scookie.",
+  "description": "Crawler SEO tecnico: base dati tecnica per la pre-analisi SEO e GEO.",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
   "dependencies": {
     "cheerio": "1.2.0",
     "playwright": "1.63.0",
-    "scookie": "git+https://github.com/prnfpp/Scookie---Scanner-Cookier.git#dc3acda46d2439ec28ef106ef429a1092ff46996",
+    "tldts": "7.4.19",
     "yaml": "2.9.1",
     "zod": "4.6.7"
   },

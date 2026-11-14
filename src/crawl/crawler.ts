@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pageType, sample, sectionsOf, sleep } from 'scookie/engine';
+import { pageType, sample, sectionsOf, sleep } from '../scookie/index.js';
 import type { LoadedConfig } from '../config/load.js';
 import type { CrawlConfig } from '../config/schema.js';
 import { TOOL_VERSION } from '../version.js';

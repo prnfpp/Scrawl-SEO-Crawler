@@ -3,8 +3,8 @@
 Scrawl scansiona un sito e produce la base dati tecnica su cui lavora la skill di pre-analisi SEO e GEO: una riga
 per indirizzo, i link, i problemi. Descrive fatti e cause; raccomandazioni e priorità strategiche le scrive la skill.
 
-Riusa il motore di navigazione di [Scookie](https://github.com/prnfpp/Scookie---Scanner-Cookier) (browser,
-anti-bot, banner, tipologie di pagina, stile dei rapporti).
+Riusa, copiandole, parti del motore di navigazione di [Scookie](https://github.com/prnfpp/Scookie---Scanner-Cookier)
+(browser, anti-bot, banner, tipologie di pagina, stile dei rapporti).
 
 > **Stato: passo 3 di 8.** Funzionano la scansione, l'analisi di ogni pagina e il confronto tra l'HTML del server e
 > la pagina dopo JavaScript. Controlli di sito, grafo dei link e duplicati, prestazioni, incrocio con Search Console
@@ -21,7 +21,8 @@ npm install
 npx playwright install chromium
 ```
 
-Se Scookie è già installato sullo stesso computer, il browser è già presente e l'ultimo comando non scarica nulla.
+Se sullo stesso computer c'è già Scookie con la stessa versione di Playwright, il browser è già presente e
+l'ultimo comando non scarica nulla.
 
 ## Uso
 
@@ -71,10 +72,12 @@ allunga la pausa. robots.txt si può ignorare solo in modo esplicito, per i siti
 `runs/<cliente>/<data>/`: `pages.csv`, `pages.json`, `links.csv`, `manifest.json`. Il dizionario dei campi è in
 [docs/FORMATO.md](docs/FORMATO.md). Il formato è versionato (`schema_version`) e le colonne sono bloccate da un test.
 
-## Dipendenza da Scookie
+## Rapporto con Scookie
 
-`package.json` punta a un commit preciso di Scookie. Gli aggiornamenti di Scookie non toccano Scrawl finché non si
-cambia quel riferimento: lo si alza apposta, dopo aver fatto girare i test.
+Scrawl non dipende da Scookie. Le parti del suo motore che servono (avvio del browser, anti-bot, tipologie di
+pagina, riconoscimento dei banner, elenco dei tracker, stile dei rapporti) sono copiate in `src/scookie/` e in
+`data/trackers.yaml`; provenienza e modifiche sono in [src/scookie/LEGGIMI.md](src/scookie/LEGGIMI.md). I due
+strumenti si aggiornano ognuno per conto proprio.
 
 ## Sviluppo
 

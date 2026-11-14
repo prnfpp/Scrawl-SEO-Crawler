@@ -1,5 +1,5 @@
 import { chromium, type Browser } from 'playwright';
-import { closeSafely, detectBotChallenge, launchOptions, resolveUserAgent, withTimeout } from 'scookie/engine';
+import { closeSafely, detectBotChallenge, launchOptions, resolveUserAgent, withTimeout } from '../scookie/index.js';
 import type { CrawlConfig } from '../config/schema.js';
 import { TOOL_VERSION } from '../version.js';
 import { TrackerBlocker } from './trackers.js';

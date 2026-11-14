@@ -3,7 +3,7 @@ import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, sta
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keepAwake, slug, timestampForPath } from 'scookie/engine';
+import { keepAwake, slug, timestampForPath } from '../scookie/index.js';
 import { stringify } from 'yaml';
 import { ConfigError, loadConfigText } from '../config/load.js';
 import { Crawler, type Progress } from '../crawl/crawler.js';

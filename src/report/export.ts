@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pageType, sectionsOf, toCsv } from 'scookie/engine';
+import { pageType, sectionsOf, toCsv } from '../scookie/index.js';
 import { parse } from 'yaml';
 import { configSchema, type CrawlConfig } from '../config/schema.js';
 import { Crawler } from '../crawl/crawler.js';

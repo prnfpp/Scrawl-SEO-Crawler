@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { parseCsv } from 'scookie/engine';
+import { parseCsv } from '../src/scookie/index.js';
 import { stringify } from 'yaml';
 import { loadConfigText } from '../src/config/load.js';
 import { Crawler } from '../src/crawl/crawler.js';

@@ -20,7 +20,7 @@ const BLOCKED = new Set(['statistica', 'marketing', 'registrazione-sessioni']);
 const GENERIC = [/\/(?:g|j|r)\/collect(?:\?|$)/, /\/collect\?(?:.*&)?v=\d/, /\/(?:matomo|piwik)\.php(?:\?|$)/, /\/api\/event(?:\?|$)/, /\/ingest\/(?:e|batch|decide)\b/, /\/tr\/?\?(?:.*&)?id=\d/];
 
 /**
- * Riconosce le richieste di tracciamento usando l'elenco di domini di Scookie (data/trackers.yaml, aggiornabile lì)
+ * Riconosce le richieste di tracciamento usando l'elenco di domini in data/trackers.yaml (aggiornabile lì, nato in Scookie)
  * più gli host indicati nella configurazione.
  */
 export class TrackerBlocker {
@@ -29,8 +29,7 @@ export class TrackerBlocker {
   private readonly extra: string[];
 
   constructor(extraHosts: string[] = []) {
-    const file = fileURLToPath(import.meta.resolve('scookie/data/trackers.yaml'));
-    const data = parse(readFileSync(file, 'utf8')) as { tracker: Entry[] };
+    const data = parse(readFileSync(fileURLToPath(new URL('../../../data/trackers.yaml', import.meta.url)), 'utf8')) as { tracker: Entry[] };
     for (const e of data.tracker) {
       if (!BLOCKED.has(e.categoria)) continue;
       const d = e.dominio.toLowerCase();

@@ -1,4 +1,4 @@
-import { hostMatches, registrableDomain } from 'scookie/engine';
+import { hostMatches, registrableDomain } from '../scookie/index.js';
 import type { CrawlConfig } from '../config/schema.js';
 
 /** Risorse che non sono pagine: restano tra i link, ma non entrano nella coda. */
