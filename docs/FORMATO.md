@@ -33,7 +33,7 @@ codice usare `pages.json`**; i CSV sono per la lettura in un foglio di calcolo.
 conta: quello del DOM dopo JavaScript se `rendered` è `true`, altrimenti quello dell'HTML del server. I campi
 `raw_*` sono sempre l'HTML del server. `diff_fields` dice quali campi cambiano tra i due.
 
-## pages (stato: passo 4)
+## pages (stato: passo 6; mancano i campi del passo 5)
 
 ### Risposta
 
@@ -50,7 +50,7 @@ conta: quello del DOM dopo JavaScript se `rendered` è `true`, altrimenti quello
 | `content_type` | testo | Intestazione Content-Type (vuota per i redirect). |
 | `template` | testo | Modello di pagina, dalla struttura dell'indirizzo o dalle regole `campionamento.tipi`. |
 | `depth` | numero | Clic dal punto di partenza: cammino più breve sul grafo dei link (un redirect non costa un clic). Vuoto: non raggiungibile dai link. |
-| `source` | `partenza` `link` `sitemap` `elenco` `redirect` | Come è stato scoperto l'indirizzo. Se è in sitemap ma anche raggiunto da un link: `link`. |
+| `source` | `partenza` `link` `sitemap` `elenco` `redirect` `search-console` | Come è stato scoperto l'indirizzo. Se è in sitemap o in Search Console ma anche raggiunto da un link: `link`. |
 | `found_on` | testo | Pagina in cui è stato trovato per la prima volta. |
 | `in_sitemap` | booleano | Presente in una delle sitemap lette. |
 | `robots_txt_blocked` | booleano | Vietato da robots.txt per il crawler dello strumento. |
@@ -145,10 +145,28 @@ I controlli che richiedono altre pagine sono in `canonical_issue`, `hreflang_iss
 | `pagination` | testo | `pagina N` se l'indirizzo è una pagina di paginazione (`?page=N`, `/page/N`). |
 | `param_duplicate_of` | testo | Indirizzo senza parametri di cui questa pagina è una copia (stesso contenuto o stesso title). |
 
+### Incrocio con Search Console e GA4
+
+Vuoti se la fonte non è stata fornita. Se è stata fornita, una pagina assente dai dati ha `0`.
+
+| Campo | Tipo | Significato |
+|---|---|---|
+| `gsc_clicks`, `gsc_impressions` | numeri | Clic e impression della pagina nel periodo (ricerca web, tutti i paesi). Gli indirizzi con frammento (`#sezione`) sono sommati alla pagina. |
+| `gsc_ctr` | numero 0-1 | Clic diviso impression. |
+| `gsc_position` | numero | Posizione media, pesata sulle impression. |
+| `ga4_sessions` | numero | Sessioni iniziate su questa pagina (pagina di destinazione), tutti i canali. |
+| `ga4_organic_sessions` | numero | Di cui dalla ricerca organica (gruppo di canali "Organic Search"). |
+| `ga4_key_events` | numero | Eventi chiave delle sessioni organiche iniziate su questa pagina. |
+| `ga4_views` | numero | Visualizzazioni della pagina. |
+| `traffic_issue` | testo | `riceve N impression e M clic ma non è indicizzabile: <motivo>`, oppure `indicizzabile ma senza impression nel periodo`. |
+
+Il periodo e le proprietà usate sono in `manifest.json` (`traffic`) e in `site.json` (`traffic`). I dati di
+Search Console per pagina sono completi (non sono soggetti all'anonimizzazione delle query).
+
 Solo in `pages.json`: `headers` (intestazioni della risposta), `headings` (titoli in ordine: `[livello, testo]`),
 `images_heaviest` (le cinque immagini più pesanti), `rendered_url` (indirizzo dopo il rendering).
 
-Campi previsti dai passi successivi: prestazioni, usabilità mobile, sicurezza, incrocio con Search Console e GA4.
+Campi previsti dal passo 5: prestazioni, usabilità mobile, sicurezza.
 
 ## links
 
@@ -170,6 +188,7 @@ Campi previsti dai passi successivi: prestazioni, usabilità mobile, sicurezza, 
 
 | Chiave | Contenuto |
 |---|---|
+| `traffic` | Incrocio con Search Console e GA4: `available`, `period`, `gsc` e `ga4` (fonte, proprietà, totali, quanta parte corrisponde a pagine visitate), `with_traffic_not_indexable` (pagine, clic, impression, per motivo, esempi in ordine di clic), `indexable_without_impressions`, `in_gsc_not_crawled`. |
 | `checks` | Controlli con richieste dedicate: `robots` (stato, righe non riconosciute, sitemap dichiarate), `domain_variants` (le versioni http/https e con/senza www, e dove portano), `trailing_slash`, `not_found` (codice di un indirizzo inesistente), `llms_txt`, `ai_crawlers` (per ogni crawler di `data/ai-crawlers.yaml`: `accesso` consentito/bloccato/parziale, da quali regole, cosa è vietato). `null` se non eseguiti. |
 | `robots` | `blocked_assets` (fogli di stile e script vietati a Googlebot), `blocked_sections` (sezioni con pagine vietate ma linkate o in sitemap). |
 | `sitemap` | `files`, `entries`, `not_crawled`, `non_indexable` (per motivo), `indexable_missing`, `lastmod` (con data, non valide, nel futuro, valore più frequente, nota). |
@@ -184,6 +203,6 @@ Campi previsti dai passi successivi: prestazioni, usabilità mobile, sicurezza, 
 ## manifest.json
 
 `schema_version`, `tool_version`, `cliente`, `status`, `started_at`, `ended_at`, `user_agent`, `seeds`,
-`counts`, `rendering` (criterio, pagine renderizzate, browser, richieste di tracciamento bloccate), `sitemaps`, `robots`, `sample`, `excluded` (link lasciati fuori, per motivo, con esempi),
+`counts`, `traffic` (periodo, proprietà e totali dei dati di traffico; `null` se non forniti), `rendering` (criterio, pagine renderizzate, browser, richieste di tracciamento bloccate), `sitemaps`, `robots`, `sample`, `excluded` (link lasciati fuori, per motivo, con esempi),
 `not_reached` (indirizzi scoperti e non visitati per i limiti), `not_verified` (frasi pronte per il report: cosa
 non è stato verificato), `notes`.

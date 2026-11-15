@@ -2,7 +2,23 @@
 
 Le modifiche al formato dei file di dati (input della skill SEO) hanno una voce **Formato**.
 
-## Non rilasciato — passo 4: controlli di sito, grafo dei link, duplicati
+## Non rilasciato — passo 6: incrocio con Search Console e GA4
+
+- Collegamento a Google dall'interfaccia (OAuth, sola lettura, credenziali sul computer) e lettura per pagina di
+  clic, impression, CTR e posizione da Search Console, sessioni, sessioni organiche, eventi chiave e
+  visualizzazioni da GA4.
+- In alternativa, importazione dei file esportati (Pagine.csv di Search Console, export per pagina di GA4).
+- Con Google collegato i dati si scaricano all'avvio e gli indirizzi con impression entrano in coda: una pagina
+  nota a Google ma non raggiungibile dai link risulta orfana.
+- Pagine con traffico ma non indicizzabili, in errore o in redirect (in ordine di clic); pagine indicizzabili
+  senza impression; indirizzi di Search Console non visitati.
+- User agent impostabile dal progetto: nome dello strumento e contatto, oppure user agent scritto per intero.
+- "Scarica tutto (zip)" nei risultati.
+- Prova su un sito reale: i link dentro il banner di consenso non contano più come link della pagina.
+- **Formato** (`schema_version` 0): 9 colonne nuove in `pages`, `traffic` in `site.json` e `manifest.json`,
+  nuovo valore `search-console` per `source`.
+
+## Passo 4: controlli di sito, grafo dei link, duplicati
 
 - Grafo dei link: link in entrata, profondità ricalcolata sul cammino più breve, pagine orfane, link verso
   redirect ed errori.

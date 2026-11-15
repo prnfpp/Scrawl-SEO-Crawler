@@ -109,6 +109,18 @@ export const configSchema = z
         viewport: z.object({ width: z.number().int(), height: z.number().int() }).default({ width: 1366, height: 900 }),
       })
       .prefault({}),
+    /** Dati di traffico da incrociare con la scansione (facoltativi): servono il collegamento a Google o i file esportati. */
+    traffico: z
+      .object({
+        /** Proprietà di Search Console, come la scrive Google: "sc-domain:esempio.it" oppure "https://www.esempio.it/". */
+        gsc: z.string().optional(),
+        /** ID numerico della proprietà GA4. */
+        ga4: z.string().regex(/^\d+$/, 'serve l\'ID numerico della proprietà GA4').optional(),
+        /** Giorni di dati, fino a tre giorni fa. Search Console conserva 16 mesi. */
+        giorni: z.number().int().min(7).max(480).default(90),
+      })
+      .prefault({}),
+
     /** Controlli a livello di sito e verifica dei link verso indirizzi non scansionati (esterni, file). */
     controlli: z
       .object({

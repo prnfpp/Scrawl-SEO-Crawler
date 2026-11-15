@@ -38,6 +38,7 @@ cortesia:
   timeoutMs: 30000
   nomeCrawler: ScrawlSEO     # nome nello user agent e per le regole di robots.txt
   contatto: mailto:seo@esempio.it
+  # userAgent: "Mozilla/5.0 (compatible; AuditCliente/1.0)"   # user agent scritto per intero, al posto di quello predefinito
 
 rendering:
   attivo: true               # confronto tra HTML del server e pagina dopo JavaScript
@@ -52,3 +53,8 @@ controlli:
   sito: true                 # versioni del dominio, pagina 404, llms.txt, crawler AI
   link: true                 # verifica dei link esterni e dei file (PDF, immagini)
   maxLink: 3000              # tetto agli indirizzi verificati
+
+traffico:                    # facoltativo: serve Google collegato dall'interfaccia
+  # gsc: sc-domain:esempio.it
+  # ga4: "123456789"
+  giorni: 90                 # periodo dei dati, fino a tre giorni fa

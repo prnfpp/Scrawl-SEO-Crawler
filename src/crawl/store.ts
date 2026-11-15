@@ -8,7 +8,7 @@ import type { RenderedImage } from './render.js';
 /** Versione del formato dei file di dati. 0 = in costruzione (passi 2-6); diventa 1 con il formato completo. */
 export const SCHEMA_VERSION = 0;
 
-export type Source = 'partenza' | 'link' | 'sitemap' | 'elenco' | 'redirect';
+export type Source = 'partenza' | 'link' | 'sitemap' | 'elenco' | 'redirect' | 'search-console';
 
 export interface FrontierEntry {
   url: string;

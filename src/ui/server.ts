@@ -10,6 +10,12 @@ import { Crawler, type Progress } from '../crawl/crawler.js';
 import { RunStore, type RunState } from '../crawl/store.js';
 import { siteSummary } from '../analyze/summary.js';
 import { exportRun, loadPages, loadRun } from '../report/export.js';
+import { parse as parseYaml } from 'yaml';
+import { randomBytes } from 'node:crypto';
+import { ga4Properties, gscSites } from '../google/api.js';
+import { accessToken, authUrl, disconnect, exchangeCode, GoogleError, googleStatus, pkce, readCredentials, saveCredentials } from '../google/auth.js';
+import { CsvError, fetchTraffic, parseGa4Csv, parseGscCsv, readTraffic, saveTraffic, type Traffic } from '../join/traffic.js';
+import { zip } from '../util/zip.js';
 import { TOOL_VERSION } from '../version.js';
 
 export interface UiOptions {
@@ -44,7 +50,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > 2_000_000) throw new HttpError(413, 'Richiesta troppo grande');
+    if (size > 60_000_000) throw new HttpError(413, 'File troppo grande (oltre 60 MB)');
     chunks.push(c as Buffer);
   }
   if (!chunks.length) return {};
@@ -60,6 +66,9 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
  * corso con avanzamento, pausa e ripresa, risultati consultabili. Una scansione alla volta.
  */
 export async function startUi(opts: UiOptions): Promise<{ server: Server; url: string; close: () => Promise<void> }> {
+  const googleDir = join(opts.root, 'google');
+  /** Collegamento a Google in corso: stato atteso e codice di verifica. */
+  let pendingAuth: { state: string; verifier: string; redirect: string } | null = null;
   const clientsDir = join(opts.root, 'clienti');
   const runsDir = join(opts.root, 'runs');
   mkdirSync(clientsDir, { recursive: true });
@@ -117,7 +126,10 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
   const launch = (id: string, dir: string, raw: string) => {
     const loaded = loadConfigText(raw, join(dir, 'config.yaml'));
     const a: Active = { id, dir, crawler: null as unknown as Crawler, progress: null, log: [], release: () => {} };
+    const t = loaded.config.traffico;
     a.crawler = new Crawler(loaded, dir, {
+      // Dati di traffico all'avvio solo se il progetto li chiede e Google è collegato
+      traffic: (t.gsc || t.ga4) && googleStatus(googleDir).connected ? () => fetchTraffic(googleDir, t) : undefined,
       onProgress: (p) => {
         a.progress = p;
         send('progress', { id, progress: p });
@@ -147,6 +159,55 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
     const path = url.pathname;
     const method = req.method ?? 'GET';
 
+    // ---------- Google ----------
+    if (path === '/api/google' && method === 'GET') {
+      const st = googleStatus(googleDir);
+      if (!st.connected) return { ...st, sites: [], properties: null };
+      try {
+        const token = await accessToken(googleDir);
+        const [sites, properties] = await Promise.all([gscSites(token), ga4Properties(token)]);
+        return { ...st, sites: sites.map((x) => x.siteUrl), properties };
+      } catch (e) {
+        return { ...st, sites: [], properties: null, error: (e as Error).message };
+      }
+    }
+    if (path === '/api/google/credenziali' && method === 'POST') {
+      try {
+        saveCredentials(googleDir, String((await body(req)).text ?? ''));
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
+      return googleStatus(googleDir);
+    }
+    if (path === '/api/google/collega' && method === 'POST') {
+      const c = readCredentials(googleDir);
+      if (!c) throw new HttpError(400, 'Carica prima il file di credenziali di Google Cloud.');
+      const p = pkce();
+      pendingAuth = { state: randomBytes(16).toString('hex'), verifier: p.verifier, redirect: `http://${req.headers.host}/api/google/callback` };
+      return { url: authUrl(c, pendingAuth.redirect, pendingAuth.state, p.challenge) };
+    }
+    if (path === '/api/google/scollega' && method === 'POST') {
+      disconnect(googleDir);
+      return googleStatus(googleDir);
+    }
+    if (path === '/api/google/callback' && method === 'GET') {
+      const page = (title: string, text: string) => {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(`<!doctype html><meta charset="utf-8"><title>Scrawl</title><body style="font:16px system-ui;max-width:560px;margin:80px auto;padding:0 20px"><h1 style="font-size:22px">${title}</h1><p>${text}</p></body>`);
+        return undefined;
+      };
+      const auth = pendingAuth;
+      pendingAuth = null;
+      if (url.searchParams.get('error')) return page('Collegamento annullato', 'Google non ha concesso l\'accesso. Puoi chiudere questa scheda e riprovare da Scrawl.');
+      if (!auth || url.searchParams.get('state') !== auth.state) return page('Collegamento non valido', 'La richiesta non viene da questa sessione di Scrawl. Chiudi la scheda e ripeti "Collega Google".');
+      try {
+        const r = await exchangeCode(googleDir, url.searchParams.get('code') ?? '', auth.redirect, auth.verifier);
+        send('google', googleStatus(googleDir));
+        return page('Google è collegato', r.missingScopes.length ? 'Attenzione: non tutte le autorizzazioni sono state concesse. Per leggere sia Search Console sia Analytics ripeti il collegamento e spunta entrambe le voci.' : 'Scrawl può leggere Search Console e Analytics, in sola lettura. Puoi chiudere questa scheda e tornare a Scrawl.');
+      } catch (e) {
+        return page('Collegamento non riuscito', (e as Error).message.replace(/[<>&]/g, ''));
+      }
+    }
     if (path === '/api/stato') return { version: TOOL_VERSION, active: active ? { id: active.id, progress: active.progress, log: active.log.slice(-50) } : null };
 
     if (path === '/api/progetti' && method === 'GET') {
@@ -200,7 +261,7 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
       return { id };
     }
 
-    const m = /^\/api\/scansioni\/([^/]+\/[^/]+)\/(pausa|riprendi|pagine|sito|esporta|file)$/.exec(decodeURIComponent(path));
+    const m = /^\/api\/scansioni\/([^/]+\/[^/]+)\/(pausa|riprendi|pagine|sito|esporta|file|zip|traffico|importa)$/.exec(decodeURIComponent(path));
     if (m) {
       const [, id, action] = m;
       if (action === 'pausa' && method === 'POST') {
@@ -217,6 +278,52 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
         return { id };
       }
       if (action === 'esporta' && method === 'POST') return { files: exportRun(dir) };
+      if (action === 'zip' && method === 'GET') {
+        exportRun(dir);
+        const names = ['pages.csv', 'pages.json', 'links.csv', 'site.json', 'manifest.json', 'config.yaml', 'registro.log'].filter((n) => existsSync(join(dir, n)));
+        const data = zip(names.map((n) => ({ name: n, data: readFileSync(join(dir, n)) })));
+        res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="scrawl-${id.replace('/', '-')}.zip"`, 'content-length': data.length });
+        res.end(data);
+        return undefined;
+      }
+      // Dati di traffico aggiunti a scansione finita: dalle API, o da un file esportato
+      if (action === 'traffico' && method === 'POST') {
+        if (!googleStatus(googleDir).connected) throw new HttpError(400, 'Google non è collegato: collegalo dalla sezione Progetti, oppure importa i file esportati.');
+        const b = await body(req);
+        let saved: { gsc?: string; ga4?: string; giorni?: number } = {};
+        try {
+          saved = (parseYaml(Crawler.savedConfig(dir) ?? '') as { traffico?: typeof saved })?.traffico ?? {};
+        } catch {
+          // configurazione non leggibile: valgono i valori indicati ora
+        }
+        const gsc = String(b.gsc ?? saved.gsc ?? '').trim() || undefined;
+        const ga4 = String(b.ga4 ?? saved.ga4 ?? '').trim() || undefined;
+        if (!gsc && !ga4) throw new HttpError(400, 'Indica la proprietà di Search Console o l\'ID della proprietà GA4.');
+        try {
+          const fresh = await fetchTraffic(googleDir, { gsc, ga4, giorni: Number(b.giorni ?? saved.giorni ?? 90) || 90 });
+          const old = readTraffic(dir);
+          saveTraffic(dir, { ...fresh, gsc: fresh.gsc ?? old?.gsc ?? null, ga4: fresh.ga4 ?? old?.ga4 ?? null });
+        } catch (e) {
+          throw new HttpError(e instanceof GoogleError ? 400 : 500, (e as Error).message);
+        }
+        if (existsSync(join(dir, 'pages.csv'))) exportRun(dir);
+        return { ok: true };
+      }
+      if (action === 'importa' && method === 'POST') {
+        const b = await body(req);
+        const old: Traffic = readTraffic(dir) ?? { fetched_at: new Date().toISOString(), period: null, gsc: null, ga4: null };
+        try {
+          if (b.tipo === 'gsc') old.gsc = { source: 'csv', property: null, rows: parseGscCsv(String(b.text ?? '')) };
+          else if (b.tipo === 'ga4') old.ga4 = { source: 'csv', property: null, rows: parseGa4Csv(String(b.text ?? '')) };
+          else throw new CsvError('Tipo di file non indicato.');
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+        // Un file importato non dice il periodo: se c'era quello delle API non vale più per questa fonte
+        saveTraffic(dir, { ...old, fetched_at: new Date().toISOString(), period: old.gsc?.source === 'api' || old.ga4?.source === 'api' ? old.period : null });
+        if (existsSync(join(dir, 'pages.csv'))) exportRun(dir);
+        return { ok: true, rows: (b.tipo === 'gsc' ? old.gsc : old.ga4)?.rows.length ?? 0 };
+      }
       if (action === 'file' && method === 'GET') {
         const name = url.searchParams.get('nome') ?? '';
         if (!/^(pages\.csv|pages\.json|links\.csv|site\.json|manifest\.json|config\.yaml|registro\.log)$/.test(name) || !existsSync(join(dir, name))) throw new HttpError(404, 'File non trovato');
@@ -243,8 +350,10 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
           duplicati: (p) => !!p.duplicate_group || Number(p.title_duplicates ?? 0) > 0,
           linkrotti: (p) => Number(p.outlinks_to_error ?? 0) + Number(p.outlinks_external_broken ?? 0) > 0,
           canonical: (p) => (p.canonical_issue as string[]).length > 0,
+          trafficononindex: (p) => p.indexable === false && /^riceve/.test(String(p.traffic_issue ?? '')),
+          senzaimpression: (p) => /senza impression/.test(String(p.traffic_issue ?? '')),
         };
-        const extra: Record<string, number> = { nonindex: 0, jsdiff: 0, jsonly: 0, schema: 0, orfane: 0, duplicati: 0, linkrotti: 0, canonical: 0 };
+        const extra: Record<string, number> = { nonindex: 0, jsdiff: 0, jsonly: 0, schema: 0, orfane: 0, duplicati: 0, linkrotti: 0, canonical: 0, trafficononindex: 0, senzaimpression: 0 };
         for (const p of all) {
           counts[klass(p)]++;
           templates[p.template] = (templates[p.template] ?? 0) + 1;
@@ -259,7 +368,8 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
           extra,
           rendered: all.filter((p) => p.rendered).length,
           templates,
-          rows: rows.slice(offset, offset + 100).map(({ headers: _h, headings: _o, ...p }) => p),
+          traffic: !!loadRun(dir).site.traffic?.available,
+          rows: (url.searchParams.get('ordine') === 'clic' ? [...rows].sort((a, b) => Number(b.gsc_clicks ?? 0) - Number(a.gsc_clicks ?? 0) || Number(b.gsc_impressions ?? 0) - Number(a.gsc_impressions ?? 0)) : rows).slice(offset, offset + 100).map(({ headers: _h, headings: _o, ...p }) => p),
           run: runInfo(id, dir),
         };
       }

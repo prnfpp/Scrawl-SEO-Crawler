@@ -1,5 +1,6 @@
 import { parseRobots, robotsCheck } from '../crawl/robots.js';
 import type { LinkCheck, RunState } from '../crawl/store.js';
+import type { TrafficReport } from '../join/join.js';
 import type { SiteChecks } from '../site/checks.js';
 
 /** Un link nei file di dati: sorgente e renderizzato uniti per pagina e destinazione. */
@@ -73,6 +74,8 @@ interface Group {
 
 export interface SiteReport {
   generated_at: string;
+  /** Incrocio con Search Console e GA4 (aggiunto dopo l'analisi, se i dati ci sono). */
+  traffic?: TrafficReport;
   /** Controlli fatti con richieste dedicate a fine scansione; null se non eseguiti. */
   checks: SiteChecks | null;
   robots: {
@@ -520,7 +523,7 @@ export function analyzeSite<T extends AnalyzablePage>(pages: T[], input: Analysi
       applicable: input.followedLinks,
       count: orphans.length,
       examples: orphans.slice(0, 30),
-      note: input.followedLinks ? 'pagine note dalla sitemap o dall\'elenco, ma non raggiungibili seguendo i link dal punto di partenza' : 'non valutabile: in questa scansione i link non sono stati seguiti',
+      note: input.followedLinks ? 'pagine note dalla sitemap, dall\'elenco o da Search Console, ma non raggiungibili seguendo i link dal punto di partenza' : 'non valutabile: in questa scansione i link non sono stati seguiti',
     },
     duplicates: {
       titles: topGroups(titles, (k) => String(byUrl.get(titles.get(k)![0])?.title ?? k)),

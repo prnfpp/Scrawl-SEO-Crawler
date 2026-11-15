@@ -149,6 +149,7 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
       <button class="btn primary" id="new-project">+ Nuovo progetto</button>
     </div>
     <div id="projects" class="grid2"></div>
+    <div class="card stack" id="google"></div>
   </section>
 
   <!-- MODULO -->
@@ -228,11 +229,37 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
               <label class="f">Pausa tra le richieste (millisecondi)<input type="number" name="pausaMs" min="0" max="60000" value="500"></label>
               <label class="f">Richieste in parallelo<input type="number" name="paralleli" min="1" max="8" value="2"></label>
             </div>
-            <label class="f">Contatto dichiarato<span class="hint">Compare nello user agent, così chi gestisce il sito sa chi scrivere. Es. mailto:seo@agenzia.it</span><input type="text" name="contatto" autocomplete="off"></label>
+            <label class="f">User agent<span class="hint">È la firma che lo strumento manda a ogni richiesta: chi gestisce il sito la vede nei registri del server.</span>
+              <select name="uaTipo">
+                <option value="dichiarato">Dichiarato: browser più il nome dello strumento (consigliato)</option>
+                <option value="personalizzato">Personalizzato: lo scrivo io</option>
+              </select>
+            </label>
+            <div class="grid2" id="ua-declared">
+              <label class="f">Nome dello strumento<span class="hint">Solo lettere, cifre e trattini. Vale anche per le regole di robots.txt.</span><input type="text" name="nomeCrawler" autocomplete="off" value="ScrawlSEO" pattern="[A-Za-z][A-Za-z0-9_-]*"></label>
+              <label class="f">Contatto<span class="hint">Facoltativo. Es. mailto:seo@agenzia.it</span><input type="text" name="contatto" autocomplete="off"></label>
+            </div>
+            <label class="f" id="ua-custom" hidden>User agent completo<span class="hint">Usato così com'è, sia per l'HTML del server sia per il rendering. Il rapporto lo riporta.</span><input type="text" name="userAgent" autocomplete="off" placeholder="Mozilla/5.0 (…)"></label>
+            <p class="small"><span class="muted">Si presenterà come:</span> <code id="ua-preview"></code></p>
+            <p class="note warn" id="ua-warn" hidden>Con uno user agent che non dichiara lo strumento, chi gestisce il sito non può riconoscere né filtrare le richieste. Alcuni siti rispondono in modo diverso a seconda dello user agent: il confronto con ciò che vede un motore di ricerca può cambiare.</p>
             <label class="check"><input type="checkbox" name="rispettaRobots" checked><span>Rispetta robots.txt</span></label>
             <p class="note warn" id="robots-warn" hidden>Con robots.txt ignorato lo strumento visita anche le pagine vietate ai crawler. Va fatto solo sui siti dei clienti, con il loro accordo: il rapporto lo dichiara.</p>
           </div>
         </details>
+      </div>
+
+      <div class="card stack">
+        <fieldset>
+          <legend>4 · Search Console e GA4 <span class="muted small" style="font-weight:400">facoltativo</span></legend>
+          <p class="muted small" id="traffic-hint"></p>
+          <div class="grid2">
+            <label class="f">Proprietà di Search Console<span class="hint">Come la scrive Google: sc-domain:esempio.it oppure https://www.esempio.it/</span><input type="text" name="gsc" list="gsc-list" autocomplete="off"><datalist id="gsc-list"></datalist></label>
+            <label class="f">Proprietà GA4<span class="hint">ID numerico (Amministrazione › Dettagli proprietà)</span><input type="text" name="ga4" list="ga4-list" inputmode="numeric" autocomplete="off"><datalist id="ga4-list"></datalist></label>
+          </div>
+          <label class="f" style="max-width:320px">Periodo dei dati
+            <select name="giorni"><option value="28">Ultimi 28 giorni</option><option value="90" selected>Ultimi 3 mesi</option><option value="180">Ultimi 6 mesi</option><option value="365">Ultimi 12 mesi</option><option value="480">Ultimi 16 mesi</option></select>
+          </label>
+        </fieldset>
       </div>
 
       <p class="note bad" id="form-error" role="alert" hidden></p>
@@ -295,9 +322,9 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
           <label class="f">Cerca nell'indirizzo o nel title<input type="text" id="q" autocomplete="off" placeholder="/prodotti/"></label>
           <label class="f">Tipologia di pagina<select id="tpl"></select></label>
         </div>
-        <p class="muted small" id="count"></p>
+        <div class="row spread"><p class="muted small" id="count"></p><label class="check small" id="sort-wrap" hidden><input type="checkbox" id="sort"><span>Ordina per clic</span></label></div>
         <div class="tablewrap"><table>
-          <thead><tr><th>Codice</th><th>Indirizzo</th><th>Indicizzabile</th><th>Title</th><th>Dopo JavaScript</th><th>Tipologia</th><th>Livello</th></tr></thead>
+          <thead><tr><th>Codice</th><th>Indirizzo</th><th>Indicizzabile</th><th>Title</th><th>Dopo JavaScript</th><th>Tipologia</th><th>Livello</th><th class="tr" hidden>Clic</th><th class="tr" hidden>Impression</th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
         <button class="btn" id="more" hidden>Mostra altre</button>
@@ -351,15 +378,53 @@ function dur(s) {
 }
 const STATUS = { 'in-corso': ['In corso', 'run'], 'in-pausa': ['In pausa', 'warn'], completata: ['Completata', 'ok'], interrotta: ['Interrotta', 'bad'] };
 const CLASSES = { ok: 'Risposta corretta (2xx)', redirect: 'Redirect (3xx)', client: 'Non trovate o vietate (4xx)', server: 'Errore del server (5xx)', errore: 'Nessuna risposta', bloccate: 'Vietate da robots.txt' };
-Object.assign(CLASSES, { nonindex: 'Non indicizzabili', jsdiff: 'Cambiano dopo JavaScript', jsonly: 'Con parti solo dopo JavaScript', schema: 'Dati strutturati con errori', orfane: 'Orfane', duplicati: 'Duplicati', linkrotti: 'Con link rotti', canonical: 'Canonical da verificare' });
+Object.assign(CLASSES, { nonindex: 'Non indicizzabili', jsdiff: 'Cambiano dopo JavaScript', jsonly: 'Con parti solo dopo JavaScript', schema: 'Dati strutturati con errori', orfane: 'Orfane', duplicati: 'Duplicati', linkrotti: 'Con link rotti', canonical: 'Canonical da verificare', trafficononindex: 'Con traffico ma non indicizzabili', senzaimpression: 'Indicizzabili senza impression' });
 const LEVEL = { ok: ['a posto', 'ok'], attenzione: ['da guardare', 'warn'], problema: ['problema', 'bad'], info: ['informazione', ''], 'non-verificato': ['non verificato', ''] };
 const FIELD = { url: 'indirizzo', title: 'title', description: 'description', canonical: 'canonical', robots_meta: 'meta robots', h1: 'H1', lang: 'lingua', hreflang: 'hreflang', schema_types: 'dati strutturati', content: 'contenuto', links: 'link interni' };
-const SOURCE = { partenza: 'punto di partenza', link: 'link', sitemap: 'sitemap', elenco: 'elenco', redirect: 'redirect' };
+const SOURCE = { 'search-console': 'Search Console', partenza: 'punto di partenza', link: 'link', sitemap: 'sitemap', elenco: 'elenco', redirect: 'redirect' };
 const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
 const withScheme = (u) => (!u ? u : /^https?:\/\//i.test(u) ? u : 'https://' + u.replace(/^\/+/, ''));
 /** Cartella scritta in chiaro (/blog/) → regola sull'inizio del percorso; chi scrive una regex (inizia con ^) la tiene. */
 const toRule = (s) => (s.startsWith('^') ? s : '^' + (s.startsWith('/') ? s : '/' + s).replace(/[.*+?${}()|[\]\\]/g, '\\$&'));
 const fromRule = (s) => (/^\^\/[\w\-/.\\]*$/.test(s) ? s.slice(1).replace(/\\(.)/g, '$1') : s);
+
+// ---------- Google ----------
+let VERSION = '';
+let google = { credentials: false, connected: false, sites: [], properties: null };
+async function loadGoogle() {
+  try { google = await api('/api/google'); } catch (e) { /* resta lo stato precedente */ }
+  renderGoogle();
+}
+function renderGoogle() {
+  const box = $('#google');
+  if (!box) return;
+  const head = h('div', { class: 'row spread' }, h('div', {}, h('h2', {}, 'Search Console e GA4'), h('p', { class: 'muted small' }, 'Facoltativo. Con Google collegato, Scrawl scarica clic, impression e sessioni per pagina e li incrocia con la scansione. Accesso in sola lettura; le credenziali restano su questo computer.')),
+    h('span', { class: 'pill ' + (google.connected ? 'ok' : '') }, google.connected ? 'Collegato' : 'Non collegato'));
+  const file = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await api('/api/google/credenziali', { text: await f.text() }); toast('Credenziali caricate'); await loadGoogle(); } catch (ex) { toast(ex.message, true); }
+  } });
+  let body;
+  if (google.connected) {
+    body = [
+      google.error ? h('p', { class: 'note bad' }, google.error) : h('p', { class: 'small' }, `${google.sites.length} proprietà di Search Console accessibili${google.properties ? ` · ${google.properties.length} proprietà GA4` : ' · elenco delle proprietà GA4 non disponibile (l\'ID si scrive a mano nel progetto)'}.`),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api('/api/google/scollega', {}); await loadGoogle(); toast('Google scollegato'); }) }, 'Scollega')),
+    ];
+  } else if (google.credentials) {
+    body = [h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, async () => { const { url } = await api('/api/google/collega', {}); window.open(url, '_blank', 'noopener'); toast('Completa l\'accesso nella scheda di Google che si è aperta'); }) }, 'Collega Google'), h('button', { class: 'btn', onclick: () => file.click() }, 'Cambia credenziali'))];
+  } else {
+    body = [
+      h('details', { class: 'adv', open: true }, h('summary', {}, 'Come si prepara, una volta sola'),
+        h('ol', { class: 'small', style: 'margin:0;padding-left:20px;display:grid;gap:4px' },
+          h('li', {}, 'In Google Cloud apri il progetto che usi già per lo script della skill SEO (con Search Console API e Google Analytics Data API attive).'),
+          h('li', {}, 'API e servizi › Credenziali › Crea credenziali › ID client OAuth › tipo "App desktop".'),
+          h('li', {}, 'Scarica il file JSON e caricalo qui sotto.'),
+          h('li', {}, 'Se la schermata di consenso è in stato "Test", il tuo indirizzo deve essere tra gli utenti di test.'))),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => file.click() }, 'Carica il file di credenziali')),
+    ];
+  }
+  box.replaceChildren(head, ...body, file);
+}
 
 // ---------- navigazione ----------
 let active = null; // { id, progress }
@@ -367,7 +432,7 @@ function show(tab) {
   for (const s of $$('main > section')) s.hidden = s.id !== 'tab-' + tab;
   const nav = tab === 'modulo' ? 'progetti' : tab;
   for (const b of $$('nav.tabs button')) b.toggleAttribute('aria-current', b.dataset.tab === nav), b.dataset.tab === nav ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
-  if (tab === 'progetti') loadProjects();
+  if (tab === 'progetti') { loadProjects(); loadGoogle(); }
   if (tab === 'risultati') { $('#run-view').hidden = true; $('#runs-view').hidden = false; loadRuns(); }
   if (tab === 'scansione') renderScan();
   window.scrollTo(0, 0);
@@ -417,8 +482,16 @@ function syncForm() {
     : 'Visita tutte le pagine nel perimetro, fino ai limiti indicati sopra.';
   $('#robots-warn').hidden = form.rispettaRobots.checked;
   $('#tracker-warn').hidden = form.bloccaTracker.checked || !form.renderAttivo.checked;
+  const custom = form.uaTipo.value === 'personalizzato';
+  $('#ua-declared').hidden = custom;
+  $('#ua-custom').hidden = !custom;
+  const name = form.nomeCrawler.value.trim() || 'ScrawlSEO';
+  const contact = form.contatto.value.trim();
+  $('#ua-preview').textContent = custom ? (form.userAgent.value.trim() || '(da scrivere)') : `Mozilla/5.0 (…) Chrome/versione del browser Safari/537.36 ${name}/${VERSION}${contact ? ` (+${contact})` : ''}`;
+  $('#ua-warn').hidden = !custom || !form.userAgent.value.trim() || new RegExp(name, 'i').test(form.userAgent.value);
 }
 form.addEventListener('change', syncForm);
+form.addEventListener('input', (e) => { if (['nomeCrawler', 'contatto', 'userAgent'].includes(e.target.name)) syncForm(); });
 form.dominio.addEventListener('blur', () => { form.dominio.value = withScheme(form.dominio.value.trim()); });
 function openForm(p) {
   editing = p ? p.name : null;
@@ -446,6 +519,12 @@ function openForm(p) {
     form.pausaMs.value = c.cortesia.pausaMs;
     form.paralleli.value = c.cortesia.paralleli;
     form.contatto.value = c.cortesia.contatto;
+    form.nomeCrawler.value = c.cortesia.nomeCrawler;
+    form.userAgent.value = c.cortesia.userAgent || '';
+    form.uaTipo.value = c.cortesia.userAgent ? 'personalizzato' : 'dichiarato';
+    form.gsc.value = c.traffico.gsc || '';
+    form.ga4.value = c.traffico.ga4 || '';
+    form.giorni.value = c.traffico.giorni;
     form.rispettaRobots.checked = c.cortesia.rispettaRobots;
     form.renderAttivo.checked = c.rendering.attivo;
     form.soglia.value = c.rendering.soglia;
@@ -453,6 +532,9 @@ function openForm(p) {
     form.bloccaTracker.checked = c.rendering.bloccaTracker;
     if (c.partenza.sitemap.length || c.partenza.url.length) form.querySelector('details').open = true;
   }
+  $('#traffic-hint').textContent = google.connected ? 'Google è collegato: i dati vengono scaricati all\'avvio della scansione, e gli indirizzi che hanno impression vengono visitati anche se nessun link li raggiunge.' : 'Google non è collegato (si collega dalla sezione Progetti). Puoi lasciare vuoto e importare i file esportati a scansione finita.';
+  $('#gsc-list').replaceChildren(...(google.sites || []).map((x) => h('option', { value: x })));
+  $('#ga4-list').replaceChildren(...(google.properties || []).map((x) => h('option', { value: x.id }, `${x.name} · ${x.account}`)));
   syncForm();
   show('modulo');
   form.cliente.focus();
@@ -469,11 +551,16 @@ function readForm() {
     perimetro: { ...(prev.perimetro || {}), sottodomini: sd === 'elenco' ? lines(form.hosts.value) : sd, includi: lines(form.includi.value).map(toRule), escludi: lines(form.escludi.value).map(toRule), maxPagine: Number(form.maxPagine.value), maxProfondita: Number(form.maxProfondita.value) },
     modalita: form.modalita.value,
     campionamento: { perTipo: Number(form.perTipo.value), maxPagine: Number(form.campioneMax.value), tipi },
-    cortesia: { ...(prev.cortesia || {}), pausaMs: Number(form.pausaMs.value), paralleli: Number(form.paralleli.value), contatto: form.contatto.value.trim(), rispettaRobots: form.rispettaRobots.checked },
+    cortesia: { ...(prev.cortesia || {}), pausaMs: Number(form.pausaMs.value), paralleli: Number(form.paralleli.value), contatto: form.contatto.value.trim(), nomeCrawler: form.nomeCrawler.value.trim() || 'ScrawlSEO', rispettaRobots: form.rispettaRobots.checked },
+    traffico: { giorni: Number(form.giorni.value) },
     rendering: { ...(prev.rendering || {}), attivo: form.renderAttivo.checked, soglia: Number(form.soglia.value), perModello: Number(form.perModello.value), bloccaTracker: form.bloccaTracker.checked },
   };
   const dom = withScheme(form.dominio.value.trim());
   if (dom) cfg.partenza.dominio = dom;
+  delete cfg.cortesia.userAgent;
+  if (form.uaTipo.value === 'personalizzato' && form.userAgent.value.trim()) cfg.cortesia.userAgent = form.userAgent.value.trim();
+  if (form.gsc.value.trim()) cfg.traffico.gsc = form.gsc.value.trim();
+  if (form.ga4.value.trim()) cfg.traffico.ga4 = form.ga4.value.trim().replace(/^properties\//, '');
   return cfg;
 }
 form.addEventListener('submit', (e) => {
@@ -545,6 +632,7 @@ function codeEl(status, blocked) {
 const es = new EventSource('/api/eventi');
 es.addEventListener('progress', (e) => { const d = JSON.parse(e.data); if (!active || active.id !== d.id) active = { id: d.id, log: [] }; active.progress = d.progress; if (!$('#tab-scansione').hidden) renderScan(); else renderStatus(); });
 es.addEventListener('log', (e) => { const d = JSON.parse(e.data); if (active && active.id === d.id) { active.log.push(d.message); if (active.log.length > 200) active.log.shift(); } });
+es.addEventListener('google', () => { loadGoogle().then(() => toast('Google è collegato')); });
 es.addEventListener('end', (e) => {
   const d = JSON.parse(e.data);
   active = null; renderStatus();
@@ -571,8 +659,9 @@ async function loadRuns() {
 }
 let view = { id: null, filtro: '', q: '', modello: '', da: 0 };
 async function openRun(id) {
-  view = { id, filtro: '', q: '', modello: '', da: 0 };
+  view = { id, filtro: '', q: '', modello: '', da: 0, ordine: '' };
   $('#q').value = '';
+  $('#sort').checked = false;
   for (const s of $$('main > section')) s.hidden = s.id !== 'tab-risultati';
   for (const b of $$('nav.tabs button')) b.dataset.tab === 'risultati' ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
   $('#runs-view').hidden = true; $('#run-view').hidden = false;
@@ -589,8 +678,18 @@ async function loadSite() {
   try { d = await api(`/api/scansioni/${view.id}/sito`); } catch (e) { box.hidden = true; return; }
   const areas = [...new Set(d.items.map((i) => i.area))];
   const count = (lv) => d.items.filter((i) => i.level === lv).length;
+  const upload = (tipo) => h('input', { type: 'file', accept: '.csv,text/csv', hidden: true, onchange: async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const r = await api(`/api/scansioni/${view.id}/importa`, { tipo, text: await f.text() }); toast(`Importate ${nf.format(r.rows)} righe`); await loadRows(true); await loadSite(); } catch (ex) { toast(ex.message, true); }
+    e.target.value = '';
+  } });
+  const upGsc = upload('gsc'), upGa4 = upload('ga4');
+  const trafficActions = h('div', { class: 'row small' }, h('span', { class: 'muted' }, 'Dati di traffico:'),
+    google.connected ? h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/traffico`, {}); toast('Dati scaricati da Google'); await loadRows(true); await loadSite(); }) }, 'Scarica da Google') : null,
+    h('button', { class: 'btn', onclick: () => upGsc.click() }, 'Importa Search Console (CSV)'), h('button', { class: 'btn', onclick: () => upGa4.click() }, 'Importa GA4 (CSV)'), upGsc, upGa4);
   box.replaceChildren(
     h('div', { class: 'row spread' }, h('h2', {}, 'Controlli a livello di sito'), h('p', { class: 'small' }, h('span', { class: 'pill bad' }, `${count('problema')} problemi`), ' ', h('span', { class: 'pill warn' }, `${count('attenzione')} da guardare`), ' ', h('span', { class: 'pill ok' }, `${count('ok')} a posto`), count('non-verificato') ? [' ', h('span', { class: 'pill' }, `${count('non-verificato')} non verificati`)] : null)),
+    trafficActions,
     ...areas.map((a) => h('div', { class: 'area' }, h('h3', {}, a), h('div', { class: 'checks' }, d.items.filter((i) => i.area === a).map((i) => {
       const head = [h('span', { class: 'pill ' + LEVEL[i.level][1] }, LEVEL[i.level][0]), h('span', {}, h('b', {}, i.title + '. '), i.text)];
       return i.details.length ? h('details', { class: 'check' }, h('summary', {}, head), h('ul', { class: 'small mono' }, i.details.map((t) => h('li', {}, t)))) : h('div', { class: 'check' }, head);
@@ -600,7 +699,7 @@ async function loadSite() {
 async function loadRows(reset) {
   if (reset) view.da = 0;
   let d;
-  try { d = await api(`/api/scansioni/${view.id}/pagine?filtro=${view.filtro}&q=${encodeURIComponent(view.q)}&modello=${encodeURIComponent(view.modello)}&da=${view.da}`); } catch (e) { toast(e.message, true); return; }
+  try { d = await api(`/api/scansioni/${view.id}/pagine?filtro=${view.filtro}&q=${encodeURIComponent(view.q)}&modello=${encodeURIComponent(view.modello)}&da=${view.da}&ordine=${view.ordine || ''}`); } catch (e) { toast(e.message, true); return; }
   const r = d.run;
   $('#run-title').textContent = r.cliente;
   $('#run-sub').replaceChildren(h('span', { class: 'pill ' + STATUS[r.status][1] }, STATUS[r.status][0]), ` ${dt(r.started_at)} · ${nf.format(d.total)} indirizzi · ${dur(r.elapsed_s)}`);
@@ -608,7 +707,7 @@ async function loadRows(reset) {
   const dl = (name, label) => h('a', { class: 'btn', href: `/api/scansioni/${view.id}/file?nome=${name}`, download: name }, label);
   $('#run-actions').replaceChildren(
     ...(resumable ? [h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi la scansione')] : []),
-    ...(r.exported ? [dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)'), dl('site.json', 'Sito (JSON)'), dl('manifest.json', 'Manifest')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
+    ...(r.exported ? [h('a', { class: 'btn primary', href: `/api/scansioni/${view.id}/zip`, download: '' }, 'Scarica tutto (zip)'), dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
   const lim = $('#run-limits');
   lim.hidden = !r.limits.length;
   lim.replaceChildren(h('b', {}, 'Cosa non è stato verificato'), h('ul', {}, r.limits.map((t) => h('li', {}, t))));
@@ -628,9 +727,13 @@ async function loadRows(reset) {
     h('td', { class: 'small' }, p.title || (p.raw_word_count !== null ? h('span', { class: 'muted' }, 'assente') : '')),
     h('td', { class: 'small' }, !p.rendered ? h('span', { class: 'muted' }, p.raw_word_count !== null ? 'non renderizzata' : '') : p.diff_fields.length ? h('span', { class: 'pill warn', title: p.diff_fields.map((f) => FIELD[f] || f).join(', ') }, `cambia: ${p.diff_fields.map((f) => FIELD[f] || f).join(', ')}`) : h('span', { class: 'pill ok' }, 'uguale')),
     h('td', {}, p.template),
-    h('td', { class: 'n' }, p.depth ?? '–')));
+    h('td', { class: 'n' }, p.depth ?? '–'),
+    d.traffic ? h('td', { class: 'n' }, p.gsc_clicks == null ? '–' : nf.format(p.gsc_clicks)) : null,
+    d.traffic ? h('td', { class: 'n' }, p.gsc_impressions == null ? '–' : nf.format(p.gsc_impressions)) : null));
+  for (const th of $$('#tab-risultati th.tr')) th.hidden = !d.traffic;
+  $('#sort-wrap').hidden = !d.traffic;
   if (reset) $('#rows').replaceChildren(...trs); else $('#rows').append(...trs);
-  if (!d.rows.length && reset) $('#rows').append(h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'Nessun indirizzo con questi filtri.')));
+  if (!d.rows.length && reset) $('#rows').append(h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'Nessun indirizzo con questi filtri.')));
   const shown = view.da + d.rows.length;
   $('#count').textContent = `${nf.format(Math.min(shown, d.matching))} di ${nf.format(d.matching)} indirizzi`;
   $('#more').hidden = shown >= d.matching;
@@ -652,6 +755,7 @@ function showDetail(p) {
     ['Lingua · hreflang', `${val(p.lang)} · ${p.hreflang_count ?? 0} alternative`],
     ['Trovata', `${SOURCE[p.source] || p.source}${p.found_on ? ` in ${p.found_on}` : ''} · livello ${p.depth ?? '–'} · ${p.in_sitemap ? 'in sitemap' : 'non in sitemap'}${p.sitemap_issue ? ` · ${p.sitemap_issue}` : ''}`],
     ['Link', `${p.inlinks} pagine la linkano${p.orphan ? ' · orfana' : ''}${p.outlinks_to_error ? ` · ${p.outlinks_to_error} link verso errori` : ''}${p.outlinks_to_redirect ? ` · ${p.outlinks_to_redirect} verso redirect` : ''}${p.outlinks_external_broken ? ` · ${p.outlinks_external_broken} esterni rotti` : ''}`],
+    ['Traffico', p.gsc_clicks == null && p.ga4_sessions == null ? 'dati non forniti' : `${p.gsc_clicks == null ? '' : `${nf.format(p.gsc_clicks)} clic · ${nf.format(p.gsc_impressions)} impression${p.gsc_position ? ` · posizione media ${p.gsc_position}` : ''}`}${p.ga4_sessions == null ? '' : `${p.gsc_clicks == null ? '' : ' · '}${nf.format(p.ga4_organic_sessions)} sessioni organiche · ${nf.format(p.ga4_key_events)} eventi chiave`}${p.traffic_issue ? ` · ${p.traffic_issue}` : ''}`],
     ['Duplicati', p.indexable ? `${p.title_duplicates} con lo stesso title · ${p.content_duplicates} con contenuto identico · ${p.near_duplicates} quasi uguali${p.duplicate_group && p.duplicate_group !== p.url ? ` · gruppo di ${p.duplicate_group}` : ''}${p.param_duplicate_of ? ` · copia con parametri di ${p.param_duplicate_of}` : ''}` : '–'],
     ['Immagini', p.images_count == null ? '–' : `${p.images_count} · ${p.images_missing_alt} senza testo alternativo · ${p.images_missing_dimensions} senza dimensioni${p.images_bytes != null ? ` · ${nf.format(Math.round(p.images_bytes / 1024))} KB scaricati · ${p.images_heavy} oltre 200 KB` : ''}`],
     ['Rendering', p.rendered ? `${p.render_reason} · ${p.tracker_requests_blocked} richieste di tracciamento bloccate` : p.render_error ? `non riuscito: ${p.render_error}` : p.render_reason || '–'],
@@ -683,6 +787,7 @@ function showDetail(p) {
 }
 let qTimer;
 $('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { view.q = e.target.value.trim(); loadRows(true); }, 250); });
+$('#sort').addEventListener('change', (e) => { view.ordine = e.target.checked ? 'clic' : ''; loadRows(true); });
 $('#tpl').addEventListener('change', (e) => { view.modello = e.target.value; loadRows(true); });
 $('#more').addEventListener('click', (e) => act(e.currentTarget, async () => { view.da += 100; await loadRows(false); }));
 
@@ -690,6 +795,7 @@ $('#more').addEventListener('click', (e) => act(e.currentTarget, async () => { v
 (async () => {
   try {
     const st = await api('/api/stato');
+    VERSION = st.version;
     $('#ver').textContent = 'v' + st.version;
     if (st.active) active = { id: st.active.id, progress: st.active.progress, log: st.active.log };
   } catch (e) { toast('Scrawl non risponde: riavvialo dal Terminale con "npm start".', true); }

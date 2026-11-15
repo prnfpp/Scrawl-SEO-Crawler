@@ -4,7 +4,7 @@ export type Level = 'ok' | 'attenzione' | 'problema' | 'info' | 'non-verificato'
 
 /** Una voce dei controlli di sito, pronta da mostrare: esito, una frase, qualche esempio. */
 export interface SiteItem {
-  area: 'Dominio' | 'robots.txt' | 'Sitemap' | 'Link' | 'Duplicati' | 'Lingue' | 'GEO';
+  area: 'Traffico' | 'Dominio' | 'robots.txt' | 'Sitemap' | 'Link' | 'Duplicati' | 'Lingue' | 'GEO';
   title: string;
   level: Level;
   text: string;
@@ -20,6 +20,24 @@ const n = (x: number, one: string, many: string) => (x === 1 ? `1 ${one}` : `${x
 export function siteSummary(s: SiteReport): SiteItem[] {
   const out: SiteItem[] = [];
   const c = s.checks;
+
+  // --- traffico (Search Console e GA4) ---
+  const t = s.traffic;
+  if (t?.available) {
+    const period = t.period ? ` dal ${t.period.start} al ${t.period.end}` : '';
+    const src = [t.gsc ? `Search Console (${n(t.gsc.urls, 'indirizzo', 'indirizzi')}, ${t.gsc.clicks.toLocaleString('it-IT')} clic)` : '', t.ga4 ? `GA4 (${n(t.ga4.paths, 'percorso', 'percorsi')}, ${t.ga4.organic_sessions.toLocaleString('it-IT')} sessioni dalla ricerca organica)` : ''].filter(Boolean).join(' e ');
+    out.push({ area: 'Traffico', title: 'Dati incrociati', level: 'info', text: `${src}${period}.${t.gsc && t.gsc.clicks ? ` Le pagine visitate coprono il ${Math.round((t.gsc.matched_clicks / t.gsc.clicks) * 100)}% dei clic.` : ''}`, details: [] });
+    const w = t.with_traffic_not_indexable;
+    out.push({ area: 'Traffico', title: 'Pagine con traffico ma non indicizzabili', level: w.count ? 'problema' : 'ok', text: w.count ? `${n(w.count, 'pagina riceve', 'pagine ricevono')} impression o traffico ma ${w.count === 1 ? 'non è indicizzabile' : 'non sono indicizzabili'}, in errore o in redirect: ${w.clicks.toLocaleString('it-IT')} clic e ${w.impressions.toLocaleString('it-IT')} impression nel periodo.` : 'Nessuna pagina con impression o traffico risulta non indicizzabile, in errore o in redirect.', details: [...Object.entries(w.by_reason).sort((a, b) => b[1].clicks - a[1].clicks).map(([r, x]) => `${r}: ${n(x.pages, 'pagina', 'pagine')}, ${x.clicks.toLocaleString('it-IT')} clic`), ...w.examples.slice(0, 10).map((e) => `${e.url} — ${e.clicks.toLocaleString('it-IT')} clic, ${e.impressions.toLocaleString('it-IT')} impression — ${e.reason}`)] });
+    if (t.gsc) {
+      const z = t.indexable_without_impressions;
+      out.push({ area: 'Traffico', title: 'Pagine indicizzabili senza impression', level: z.count ? 'attenzione' : 'ok', text: z.count ? `${n(z.count, 'pagina indicizzabile non ha avuto', 'pagine indicizzabili non hanno avuto')} impression nel periodo (${Math.round(z.share * 100)}% delle indicizzabili).` : 'Tutte le pagine indicizzabili hanno avuto impression nel periodo.', details: z.examples.slice(0, 10) });
+      const m = t.in_gsc_not_crawled;
+      out.push({ area: 'Traffico', title: 'In Search Console ma non visitate', level: m.count ? 'non-verificato' : 'ok', text: m.count ? `${n(m.count, 'indirizzo con impression non è stato visitato', 'indirizzi con impression non sono stati visitati')} dalla scansione (fuori perimetro, oltre i limiti, o dati aggiunti a scansione finita): ${m.clicks.toLocaleString('it-IT')} clic.` : 'Tutti gli indirizzi di Search Console sono stati visitati.', details: m.examples.slice(0, 10).map((e) => `${e.url} — ${e.clicks.toLocaleString('it-IT')} clic, ${e.impressions.toLocaleString('it-IT')} impression`) });
+    }
+  } else {
+    out.push({ area: 'Traffico', title: 'Search Console e GA4', level: 'non-verificato', text: 'Dati di traffico non forniti: i problemi non sono pesati sul traffico reale delle pagine.', details: [] });
+  }
 
   // --- dominio ---
   if (c) {

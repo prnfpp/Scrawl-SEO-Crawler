@@ -9,6 +9,8 @@ import { RunStore, SCHEMA_VERSION, type PageRow, type RenderRow } from '../crawl
 import { canonicalOf, indexability, linkHeaderCanonical, xRobots, type CanonicalType } from '../extract/compare.js';
 import { headingIssues, type PageFacts } from '../extract/extract.js';
 import { ANALYSIS_COLUMNS, analyzeSite, type MergedLink, type SiteReport } from '../analyze/site.js';
+import { joinTraffic, TRAFFIC_COLUMNS } from '../join/join.js';
+import { readTraffic } from '../join/traffic.js';
 import type { SiteChecks } from '../site/checks.js';
 import { TOOL_VERSION } from '../version.js';
 
@@ -31,6 +33,8 @@ export const PAGE_COLUMNS = [
   'rendered', 'render_reason', 'render_error', 'raw_title', 'raw_description', 'raw_canonical', 'raw_robots_meta', 'raw_h1', 'raw_word_count', 'raw_schema_types', 'raw_outlinks_internal', 'diff_fields', 'js_only_fields', 'content_raw_ratio', 'links_only_rendered', 'links_only_raw', 'tracker_requests_blocked',
   // analisi tra pagine (passo 4)
   ...ANALYSIS_COLUMNS,
+  // incrocio con Search Console e GA4 (passo 6)
+  ...TRAFFIC_COLUMNS,
 ] as const;
 
 export const LINK_COLUMNS = ['source_url', 'target_url', 'anchor', 'rel', 'nofollow', 'is_internal', 'in_raw', 'in_rendered', 'target_status', 'target_final_url', 'placement'] as const;
@@ -239,8 +243,8 @@ const cache = new Map<string, { stamp: string; run: LoadedRun }>();
  * scansione non cambiano: l'interfaccia lo chiede a ogni filtro e su un sito grande rileggerlo ogni volta è lento.
  */
 export function loadRun(runDir: string): LoadedRun {
-  const stamp = ['pagine.jsonl', 'render.jsonl', 'link.jsonl', 'link-render.jsonl', 'controllo-link.jsonl', 'sito.json']
-    .map((f) => (existsSync(join(runDir, f)) ? statSync(join(runDir, f)).size : 0))
+  const stamp = ['pagine.jsonl', 'render.jsonl', 'link.jsonl', 'link-render.jsonl', 'controllo-link.jsonl', 'sito.json', 'traffico.json']
+    .map((f) => (existsSync(join(runDir, f)) ? `${statSync(join(runDir, f)).size}-${statSync(join(runDir, f)).mtimeMs}` : 0))
     .join(':');
   const hit = cache.get(runDir);
   if (hit && hit.stamp === stamp) return hit.run;
@@ -261,6 +265,7 @@ export function loadRun(runDir: string): LoadedRun {
     followedLinks: !cfg || (cfg.modalita === 'completa' && cfg.perimetro.seguiLink),
     normalize: (u) => normalizeUrl(u, undefined, ignored),
   });
+  site.traffic = joinTraffic(pages, readTraffic(runDir), (u) => normalizeUrl(u, undefined, ignored));
   const run = { pages, links, site };
   if (cache.size > 4) cache.clear();
   cache.set(runDir, { stamp, run });
@@ -330,6 +335,7 @@ export function exportRun(runDir: string): string[] {
         sample: state?.sample ?? null,
         excluded: state?.excluded ?? {},
         not_reached: state?.not_reached ?? null,
+        traffic: site.traffic?.available ? { period: site.traffic.period, gsc: site.traffic.gsc, ga4: site.traffic.ga4 } : null,
         not_verified: state?.limits ?? [],
         notes: state?.notes ?? [],
         files: { pages: ['pages.csv', 'pages.json'], links: ['links.csv'], site: 'site.json', config: 'config.yaml' },

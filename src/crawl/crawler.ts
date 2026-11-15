@@ -11,6 +11,7 @@ import { Renderer } from './render.js';
 import { crawlDelayFor, parseRobots, robotsCheck, type Robots } from './robots.js';
 import { SCOPE_LABEL, Scope } from './scope.js';
 import { readSitemaps, type SitemapEntry } from './sitemap.js';
+import { saveTraffic, type Traffic } from '../join/traffic.js';
 import { runSiteChecks } from '../site/checks.js';
 import { RunStore, SCHEMA_VERSION, type FrontierEntry, type LinkCheck, type LinkRow, type PageRow, type RenderRow, type RunState, type Source } from './store.js';
 
@@ -40,6 +41,8 @@ export interface Progress {
 export interface CrawlerOptions {
   onProgress?: (p: Progress) => void;
   log?: (msg: string) => void;
+  /** Scarica i dati di Search Console e GA4 all'avvio (lo fornisce l'interfaccia, se Google è collegato). */
+  traffic?: () => Promise<Traffic | null>;
   /** Intervallo minimo tra due aggiornamenti dell'avanzamento (predefinito 400 ms). */
   progressIntervalMs?: number;
 }
@@ -718,6 +721,38 @@ export class Crawler {
   }
 
   /**
+   * Dati di Search Console e GA4, scaricati prima di iniziare: gli indirizzi che hanno impression entrano in coda
+   * come quelli della sitemap, così una pagina nota a Google ma non raggiungibile dai link risulta orfana.
+   */
+  private async loadTraffic() {
+    const t = this.cfg.traffico;
+    if (!t.gsc && !t.ga4) return;
+    if (!this.opts.traffic) {
+      this.note('Dati di Search Console e GA4 non scaricati: Google non è collegato. Si possono aggiungere dopo, dai risultati.');
+      return;
+    }
+    this.phase = 'lettura di Search Console e GA4';
+    this.emit(true);
+    try {
+      const data = await this.opts.traffic();
+      if (!data) return;
+      saveTraffic(this.runDir, data);
+      let added = 0;
+      if (this.cfg.modalita === 'completa') {
+        for (const r of data.gsc?.rows ?? []) {
+          if (r.impressions <= 0) continue;
+          const u = this.scope.normalize(r.url);
+          if (u && this.enqueue(u, null, 'search-console', null)) added++;
+        }
+      }
+      this.log(`Search Console: ${data.gsc?.rows.length ?? 0} indirizzi${added ? `, ${added} non ancora noti aggiunti alla coda` : ''}; GA4: ${data.ga4?.rows.length ?? 0} percorsi`);
+    } catch (e) {
+      this.note(`Dati di Search Console e GA4 non scaricati: ${(e as Error).message.split('\n')[0]}`);
+      this.log(`Traffico non scaricato: ${(e as Error).message}`);
+    }
+  }
+
+  /**
    * Verifica dei link verso indirizzi che non vengono scansionati: siti esterni e file del sito (PDF, immagini).
    * Una richiesta per indirizzo, senza leggere il contenuto, con le stesse pause per host.
    */
@@ -851,6 +886,7 @@ export class Crawler {
           for (const s of seeds) this.enqueue(s.url, s.depth, s.source, null);
           for (const u of this.sitemapUrls) this.enqueue(u, null, 'sitemap', null);
         }
+        await this.loadTraffic();
         this.save();
       }
 
