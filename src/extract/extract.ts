@@ -1,5 +1,5 @@
 import { load } from 'cheerio';
-import { contentHash, mainContent, simhash, visibleText } from './content.js';
+import { CONSENT, contentHash, mainContent, simhash, visibleText } from './content.js';
 import { structuredData, type StructuredData } from './structured.js';
 
 export type Placement = 'main' | 'nav' | 'header' | 'footer' | 'aside' | 'body';
@@ -123,6 +123,9 @@ export function extractPage(html: string, pageUrl: string, isInternal: (hostname
   $('a[href]').each((_, el) => {
     const raw = ($(el).attr('href') ?? '').trim();
     if (!raw || raw.startsWith('#') || SKIP.test(raw)) return;
+    // I link del banner di consenso non sono link della pagina: il banner compare solo nel renderizzato e farebbe
+    // risultare "link aggiunti da JavaScript" su ogni pagina del sito
+    if ($(el).closest(CONSENT).length) return;
     const href = absolute(raw, base);
     if (!href) return;
     const rel = collapse($(el).attr('rel')).toLowerCase();

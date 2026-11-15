@@ -172,7 +172,8 @@ export function analyzeSite<T extends AnalyzablePage>(pages: T[], input: Analysi
     else m.set(k, new Set([v]));
   };
   const brokenCheck = (c: LinkCheck) => (c.status !== null ? c.status === 404 || c.status === 410 || c.status >= 500 : !!c.error && /DNS|rifiutata|certificato/.test(c.error));
-  const unverifiable = (c: LinkCheck) => c.status !== null && [401, 403, 405, 406, 429, 999].includes(c.status);
+  // Rifiuti rivolti ai crawler e risposte che lo strumento non riesce a leggere: per una persona il link può funzionare
+  const unverifiable = (c: LinkCheck) => (c.status !== null ? [400, 401, 403, 405, 406, 429, 999].includes(c.status) : !brokenCheck(c));
   for (const l of input.links) {
     if (!byUrl.has(l.source_url)) continue;
     const t = byUrl.get(l.target_url);

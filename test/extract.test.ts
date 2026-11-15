@@ -23,7 +23,7 @@ const HTML = `<!doctype html><html lang="it-IT"><head>
 <div itemscope itemtype="https://schema.org/LocalBusiness"><span itemprop="name">Negozio X</span><div itemprop="address" itemscope itemtype="https://schema.org/PostalAddress"><span itemprop="streetAddress">Via Roma 1</span></div></div>
 </main>
 <footer><link rel="canonical" href="/sbagliato"><a href="/privacy">Privacy</a></footer>
-<div id="onetrust-consent-sdk">${words(40, 'cookie')}</div>
+<div id="onetrust-consent-sdk">${words(40, 'cookie')}<a href="/cookie-policy">Cookie policy</a></div>
 </body></html>`;
 
 test('estrazione: testata, titoli, link, immagini, contenuto principale', () => {

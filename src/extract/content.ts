@@ -6,7 +6,7 @@ const NOT_TEXT = 'script, style, noscript, template, svg, iframe, object, embed,
 /** Parti ripetute della pagina, fuori dal contenuto principale. */
 const CHROME = 'header, nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], [role="complementary"], [role="dialog"], [aria-modal="true"]';
 /** Banner di consenso più diffusi: il loro testo non è contenuto della pagina. */
-const CONSENT = '#onetrust-consent-sdk, #onetrust-banner-sdk, #CybotCookiebotDialog, #iubenda-cs-banner, .iubenda-cs-container, #cookie-law-info-bar, .cky-consent-container, .cmplz-cookiebanner, #cmplz-cookiebanner-container, .cc-window, #cc-main, #didomi-host, #usercentrics-root, #hs-eu-cookie-confirmation, [id^="cookie-banner"], [class^="cookie-banner"], [id^="cookiebanner"], [class^="cookiebanner"]';
+export const CONSENT = '#onetrust-consent-sdk, #onetrust-banner-sdk, #CybotCookiebotDialog, #iubenda-cs-banner, .iubenda-cs-container, #cookie-law-info-bar, .cky-consent-container, .cmplz-cookiebanner, #cmplz-cookiebanner-container, .cc-window, #cc-main, #didomi-host, #usercentrics-root, #hs-eu-cookie-confirmation, [id^="cookie-banner"], [class^="cookie-banner"], [id^="cookiebanner"], [class^="cookiebanner"]';
 
 const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
 

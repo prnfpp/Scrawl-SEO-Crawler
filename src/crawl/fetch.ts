@@ -54,6 +54,7 @@ function describeError(e: unknown): string {
     UND_ERR_CONNECT_TIMEOUT: 'connessione scaduta',
     UND_ERR_HEADERS_TIMEOUT: 'intestazioni non ricevute in tempo',
     UND_ERR_SOCKET: 'connessione chiusa dal server',
+    UND_ERR_HEADERS_OVERFLOW: 'risposta con intestazioni troppo grandi per essere letta',
     CERT_HAS_EXPIRED: 'certificato HTTPS scaduto',
     DEPTH_ZERO_SELF_SIGNED_CERT: 'certificato HTTPS autofirmato',
     SELF_SIGNED_CERT_IN_CHAIN: 'certificato HTTPS non attendibile',
