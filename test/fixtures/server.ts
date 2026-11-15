@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 const page = (title: string, links: string[]) => `<!doctype html><html lang="it"><head><title>${title}</title></head><body><h1>${title}</h1>${links.map((l) => `<a href="${l}">vai a ${l}</a>`).join('\n')}</body></html>`;
 
 const PAGES: Record<string, string> = {
-  '/': page('Home', ['/a', '/b', '/redir', '/blog/post-1', '/blog/post-2', '/privato/x', 'https://example.org/', '/file.pdf', '/a#sezione', '/a?utm_source=newsletter', 'mailto:info@esempio.test', '/missing', '/js/spa', '/noindex', '/canon', '/jsnoindex', '/prodotto', '/xrobots']),
+  '/': page('Home', ['/a', '/b', '/redir', '/blog/post-1', '/blog/post-2', '/privato/x', 'EXTERNAL', '/file.pdf', '/a#sezione', '/a?utm_source=newsletter', 'mailto:info@esempio.test', '/missing', '/js/spa', '/noindex', '/canon', '/jsnoindex', '/prodotto', '/xrobots', '/dup1', '/dup2', '/near', '/it/pagina', '/a?sort=asc', '/lista', '/canon2']),
   '/a': page('A', ['/b', '/c']),
   '/b': page('B', ['/']),
   '/c': page('C', ['/deep/1']),
@@ -32,10 +32,22 @@ const SPECIAL: Record<string, string> = {
   '/canon': `<!doctype html><html lang="it"><head><title>Canonical altrove</title><link rel="canonical" href="/a"></head><body><h1>Canonical altrove</h1></body></html>`,
   '/jsnoindex': `<!doctype html><html lang="it"><head><title>Noindex da JS</title></head><body><h1>Noindex da JS</h1><script>var m = document.createElement('meta'); m.name = 'robots'; m.content = 'noindex'; document.head.appendChild(m);</script></body></html>`,
   '/xrobots': page('X-Robots', []),
+  // duplicati: stesso title e stesso contenuto; /near ha lo stesso testo con una frase in più
+  '/dup1': `<!doctype html><html lang="it"><head><title>Doppione</title><meta name="description" content="Stessa descrizione."></head><body><main><h1>Doppione</h1><p>${LOREM}</p></main></body></html>`,
+  '/dup2': `<!doctype html><html lang="it"><head><title>Doppione</title><meta name="description" content="Stessa descrizione."></head><body><main><h1>Doppione</h1><p>${LOREM}</p></main></body></html>`,
+  '/near': `<!doctype html><html lang="it"><head><title>Quasi doppione</title></head><body><main><h1>Doppione</h1><p>${LOREM} con una coda</p></main></body></html>`,
+  // hreflang: la versione italiana indica quella inglese, che non ricambia
+  '/it/pagina': `<!doctype html><html lang="it"><head><title>Pagina IT</title><link rel="alternate" hreflang="it" href="/it/pagina"><link rel="alternate" hreflang="en" href="/en/page"><link rel="alternate" hreflang="english" href="/en/page"></head><body><h1>Pagina IT</h1><a href="/en/page">English</a></body></html>`,
+  '/en/page': `<!doctype html><html lang="en"><head><title>Page EN</title><link rel="alternate" hreflang="en" href="/en/page"></head><body><h1>Page EN</h1></body></html>`,
+  // paginazione con canonical verso la prima pagina
+  '/lista': `<!doctype html><html lang="it"><head><title>Lista</title><link rel="canonical" href="/lista"></head><body><h1>Lista</h1><a href="/lista?page=2">2</a></body></html>`,
+  '/lista?page=2': `<!doctype html><html lang="it"><head><title>Lista pagina 2</title><link rel="canonical" href="/lista"></head><body><h1>Lista pagina 2</h1></body></html>`,
+  // canonical verso una pagina noindex
+  '/canon2': `<!doctype html><html lang="it"><head><title>Canonical verso noindex</title><link rel="canonical" href="/noindex"></head><body><h1>Canonical verso noindex</h1></body></html>`,
   '/prodotto': `<!doctype html><html lang="it-IT"><head><title>Divano Milano</title><meta name="description" content="Divano a tre posti."><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="canonical" href="/prodotto"><link rel="alternate" hreflang="en" href="/en/prodotto">
     <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Poltrona Roma","image":"/img.png"}</script>
     <script type="application/ld+json">{"@type":"BreadcrumbList", "itemListElement": [ {"position":1,} ]}</script>
-    </head><body><header><a href="/">Home</a></header><main><h1>Divano Milano</h1><h3>Dettagli</h3><p>${LOREM}</p><img src="/img.png"><img src="/img.png" alt="Divano" width="10" height="10"><a href="/a" rel="nofollow">scheda</a></main><footer><a href="/b">B</a></footer></body></html>`,
+    </head><body><header><a href="/">Home</a></header><script src="/privato/app.js"></script><main><h1>Divano Milano</h1><h3>Dettagli</h3><p>${LOREM}</p><img src="/img.png"><img src="/img.png" alt="Divano" width="10" height="10"><a href="/a" rel="nofollow">scheda</a></main><footer><a href="/b">B</a></footer></body></html>`,
 };
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const REDIRECTS: Record<string, [number, string]> = { '/redir': [301, '/redir2'], '/redir2': [302, '/a'], '/loop1': [302, '/loop2'], '/loop2': [302, '/loop1'] };
@@ -53,11 +65,12 @@ export async function startFixture(delayMs = 0): Promise<Fixture> {
   let origin = '';
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
+    const full = req.url ?? '/';
     hits.set(path, (hits.get(path) ?? 0) + 1);
     const reply = () => {
       if (path === '/robots.txt') {
         res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(`User-agent: *\nDisallow: /privato/\n\nSitemap: ${origin}/sitemap.xml\n`);
+        res.end(`User-agent: *\nDisallow: /privato/\n\nUser-agent: GPTBot\nDisallow: /\n\nSitemap: ${origin}/sitemap.xml\n`);
       } else if (path === '/sitemap.xml') {
         res.writeHead(200, { 'content-type': 'application/xml' });
         res.end(`<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/', '/a', '/orfana', '/missing'].map((p) => `<url><loc>${origin}${p}</loc><lastmod>2026-10-01</lastmod></url>`).join('')}</urlset>`);
@@ -70,12 +83,12 @@ export async function startFixture(delayMs = 0): Promise<Fixture> {
       } else if (path === '/g/collect' || path === '/matomo.php') {
         res.writeHead(204);
         res.end();
-      } else if (SPECIAL[path]) {
+      } else if (SPECIAL[full] ?? SPECIAL[path]) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...(path === '/xrobots' ? { 'x-robots-tag': 'googlebot: noindex, max-snippet: 10' } : {}) });
-        res.end(SPECIAL[path]);
+        res.end(SPECIAL[full] ?? SPECIAL[path]);
       } else if (PAGES[path]) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end(PAGES[path]);
+        res.end(PAGES[path].replace('EXTERNAL', `${origin.replace('127.0.0.1', 'localhost')}/esterno-rotto`));
       } else {
         res.writeHead(404, { 'content-type': 'text/html' });
         res.end(page('Non trovata', []));

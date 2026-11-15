@@ -2,7 +2,26 @@
 
 Le modifiche al formato dei file di dati (input della skill SEO) hanno una voce **Formato**.
 
-## Non rilasciato — passo 3: estrazione per pagina, sorgente contro renderizzato
+## Non rilasciato — passo 4: controlli di sito, grafo dei link, duplicati
+
+- Grafo dei link: link in entrata, profondità ricalcolata sul cammino più breve, pagine orfane, link verso
+  redirect ed errori.
+- Verifica dei link verso indirizzi non scansionati: file del sito (PDF, immagini) e siti esterni.
+- Duplicati tra pagine indicizzabili: title, description, contenuto identico e quasi uguale (simhash).
+- Canonical e hreflang tra pagine: canonical verso pagine non indicizzabili o in catena, conflitti con sitemap e
+  hreflang, reciprocità degli hreflang, codici lingua non validi.
+- Sitemap: indirizzi non indicizzabili, pagine indicizzabili assenti, plausibilità delle date.
+- Parametri di URL che generano copie, paginazione.
+- robots.txt: sintassi, risorse (CSS e JS) e sezioni bloccate, sitemap dichiarata.
+- Dominio: versioni http/https e con/senza www, barra finale, codice della pagina 404.
+- GEO: accesso dei crawler AI da `data/ai-crawlers.yaml` (25 nomi, 24 letti il 2026-11-15 sulle pagine ufficiali),
+  `llms.txt`, quota del contenuto leggibile senza JavaScript.
+- Interfaccia: riquadro "Controlli a livello di sito", filtri per orfane, duplicati, link rotti, canonical.
+- **Formato** (`schema_version` 0): 18 colonne nuove in `pages`, nuovo file `site.json`. `depth` ora è la
+  profondità sul grafo dei link (prima era quella vista durante la scansione). `target_status` in `links` vale
+  anche per esterni e file.
+
+## Passo 3: estrazione per pagina, sorgente contro renderizzato
 
 - Per ogni pagina: title, description, canonical, direttive robots (meta e intestazione), H1 e gerarchia dei titoli,
   contenuto principale, lingua e hreflang, immagini, link con posizione nella pagina, dati strutturati (JSON-LD e

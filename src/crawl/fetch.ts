@@ -31,6 +31,8 @@ export interface FetchOptions {
   maxBytes?: number;
   acceptLanguage?: string;
   signal?: AbortSignal;
+  /** Non legge il corpo della risposta: basta sapere se l'indirizzo risponde (verifica dei link). */
+  headersOnly?: boolean;
   /** Chiamata prima di ogni richiesta, anche dei passaggi di un redirect: qui si applicano le pause per host. */
   beforeRequest?: (url: string) => Promise<void>;
 }
@@ -58,6 +60,7 @@ function describeError(e: unknown): string {
     UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'catena del certificato HTTPS incompleta',
     ERR_TLS_CERT_ALTNAME_INVALID: 'certificato HTTPS non valido per questo host',
   };
+  if (/^ERR_SSL_|^ERR_TLS_|EPROTO/.test(code)) return 'HTTPS non disponibile (errore nel collegamento sicuro)';
   return map[code] ?? (code ? `${code}: ${err.cause?.message ?? err.message}` : err.message);
 }
 
@@ -128,7 +131,7 @@ export async function fetchChain(startUrl: string, opts: FetchOptions): Promise<
     }
 
     const type = headers['content-type'] ?? '';
-    if (type && !TEXTUAL.test(type)) {
+    if (opts.headersOnly || (type && !TEXTUAL.test(type))) {
       await res.body?.cancel().catch(() => {});
       const len = Number(headers['content-length']);
       return done(typeOf(), { bytes: Number.isFinite(len) && headers['content-length'] ? len : null });

@@ -11,7 +11,8 @@ import { Renderer } from './render.js';
 import { crawlDelayFor, parseRobots, robotsCheck, type Robots } from './robots.js';
 import { SCOPE_LABEL, Scope } from './scope.js';
 import { readSitemaps, type SitemapEntry } from './sitemap.js';
-import { RunStore, SCHEMA_VERSION, type FrontierEntry, type LinkRow, type PageRow, type RenderRow, type RunState, type Source } from './store.js';
+import { runSiteChecks } from '../site/checks.js';
+import { RunStore, SCHEMA_VERSION, type FrontierEntry, type LinkCheck, type LinkRow, type PageRow, type RenderRow, type RunState, type Source } from './store.js';
 
 export interface Progress {
   status: RunState['status'];
@@ -31,6 +32,9 @@ export interface Progress {
   /** Rendering con browser: pagine fatte e pagine scelte in questa fase. */
   rendered: number;
   toRender: number;
+  /** Verifica dei link esterni e dei file. */
+  linksChecked: number;
+  linksToCheck: number;
 }
 
 export interface CrawlerOptions {
@@ -76,6 +80,13 @@ export class Crawler {
   private readonly rawInternal = new Map<string, string[]>();
   /** Pagine già renderizzate: true se il confronto ha mostrato differenze che contano. */
   private readonly renderDone = new Map<string, boolean>();
+  /** Fogli di stile e script visti nelle pagine. */
+  private readonly assets = new Set<string>();
+  /** Destinazioni dei link che non vengono scansionate (siti esterni, file): da verificare a fine scansione. */
+  private readonly linkTargets = new Map<string, LinkCheck['kind']>();
+  private readonly linkChecked = new Set<string>();
+  private linksToCheck = 0;
+  private checksIncomplete = false;
   private toRender = 0;
   private renderIncomplete = false;
   private scope!: Scope;
@@ -229,8 +240,8 @@ export class Crawler {
     if (at > now) await sleep(at - now);
   }
 
-  private get(url: string): Promise<FetchResult> {
-    return fetchChain(url, { userAgent: this.ua, timeoutMs: this.cfg.cortesia.timeoutMs, signal: this.abort.signal, beforeRequest: (u) => this.slot(u) });
+  private get(url: string, headersOnly = false): Promise<FetchResult> {
+    return fetchChain(url, { userAgent: this.ua, timeoutMs: headersOnly ? Math.min(this.cfg.cortesia.timeoutMs, 20000) : this.cfg.cortesia.timeoutMs, signal: this.abort.signal, beforeRequest: (u) => this.slot(u), headersOnly });
   }
 
   /** Come get, ma se il server chiede di rallentare (429, 503) aspetta e riprova, allungando la pausa per quell'host. */
@@ -263,6 +274,7 @@ export class Crawler {
         const found = status !== null && status < 300 && res.body !== null && !/^\s*<(?:!doctype|html)/i.test(res.body);
         const robots = found ? parseRobots(res.body!) : null;
         this.robots.set(origin, { robots, status });
+        if (found) this.store.saveRobotsText(new URL(origin).host, res.body!);
         const host = new URL(origin).host;
         const delay = robots ? crawlDelayFor(robots, this.cfg.cortesia.nomeCrawler) : null;
         if (delay && this.cfg.cortesia.rispettaRobots) {
@@ -429,12 +441,23 @@ export class Crawler {
       if (!target) continue;
       const internal = this.scope.isInternalHost(new URL(target).hostname);
       if (internal) internalTargets.add(target);
+      this.trackTarget(target, internal);
       rows.push({ source_url: pageUrl, target_url: target, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: internal, in_raw: true, in_rendered: null, placement: l.placement });
       if (collect) collect(target, childDepth);
       else if (follow) this.enqueue(target, childDepth, 'link', pageUrl);
     }
     this.store.addLinks(rows);
     this.rawInternal.set(pageUrl, [...internalTargets]);
+    const fresh = ex.assets.filter((a) => !this.assets.has(a) && this.assets.size < 5000);
+    for (const a of fresh) this.assets.add(a);
+    this.store.addAssets(fresh);
+  }
+
+  /** Registra la destinazione di un link che non verrà scansionata, per la verifica a fine scansione. */
+  private trackTarget(target: string, internal: boolean) {
+    if (this.linkTargets.has(target)) return;
+    if (!internal) this.linkTargets.set(target, 'esterno');
+    else if (this.scope.reason(target) === 'non-pagina') this.linkTargets.set(target, 'file');
   }
 
   // ---------- rendering ----------
@@ -528,6 +551,7 @@ export class Crawler {
           if (!target) return [];
           const internal = this.scope.isInternalHost(new URL(target).hostname);
           if (internal) targets.add(target);
+          this.trackTarget(target, internal);
           // Link che esiste solo dopo JavaScript: entra in coda come gli altri
           if (follow && !known.has(target)) this.enqueue(target, childDepth, 'link', url);
           return [{ source_url: url, target_url: target, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: internal, placement: l.placement }];
@@ -620,6 +644,9 @@ export class Crawler {
       else this.rawInternal.set(l.source_url, [l.target_url]);
     }
     for (const [url, e] of this.entries) if (!this.doneUrls.has(url)) this.push(url, e.depth);
+    for (const a of RunStore.readAssets(this.runDir)) this.assets.add(a);
+    for (const l of [...RunStore.readLinks(this.runDir), ...RunStore.readRenderLinks(this.runDir)]) this.trackTarget(l.target_url, l.is_internal);
+    for (const c of RunStore.readLinkChecks(this.runDir)) this.linkChecked.add(c.url);
     this.sitemapUrls = new Set(RunStore.readSitemapEntries(this.runDir).map((s) => this.scope.normalize(s.loc)).filter((u): u is string => !!u));
   }
 
@@ -671,6 +698,8 @@ export class Crawler {
       recent: this.recent.slice(),
       rendered: this.renderDone.size,
       toRender: this.toRender,
+      linksChecked: this.linkChecked.size,
+      linksToCheck: this.linksToCheck,
     };
   }
 
@@ -686,6 +715,62 @@ export class Crawler {
     this.state.updated_at = new Date().toISOString();
     this.state.elapsed_s = Math.round(this.priorElapsed + (this.sessionStart ? (Date.now() - this.sessionStart) / 1000 : 0));
     this.store.saveState(this.state);
+  }
+
+  /**
+   * Verifica dei link verso indirizzi che non vengono scansionati: siti esterni e file del sito (PDF, immagini).
+   * Una richiesta per indirizzo, senza leggere il contenuto, con le stesse pause per host.
+   */
+  private async checkLinks() {
+    const c = this.cfg.controlli;
+    if (!c.link) return;
+    const pending = [...this.linkTargets].filter(([u]) => !this.linkChecked.has(u) && !this.doneUrls.has(u));
+    const room = Math.max(0, c.maxLink - this.linkChecked.size);
+    // Prima i file del sito, poi gli esterni: se il limite taglia, taglia gli esterni
+    const todo = pending.sort((a, b) => (a[1] === b[1] ? 0 : a[1] === 'file' ? -1 : 1)).slice(0, room);
+    if (pending.length > todo.length) this.note(`Verifica dei link: controllati ${this.linkChecked.size + todo.length} indirizzi su ${this.linkChecked.size + pending.length} (limite controlli.maxLink); gli altri non sono stati verificati.`);
+    if (!todo.length) return;
+    this.linksToCheck = this.linkChecked.size + todo.length;
+    this.phase = 'verifica dei link esterni e dei file';
+    this.log(`Verifica dei link: ${todo.length} indirizzi`);
+    const worker = async () => {
+      for (;;) {
+        if (this.stopping) return;
+        const item = todo.shift();
+        if (!item) return;
+        const [url, kind] = item;
+        const res = await this.get(url, true);
+        if (this.abort.signal.aborted) return;
+        const last = res.hops.at(-1);
+        this.store.addLinkCheck({ url, kind, status: last && !last.location ? last.status : null, final_url: last ? (last.location ?? last.url) : null, error: res.error });
+        this.linkChecked.add(url);
+        this.emit();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(this.cfg.cortesia.paralleli, 4) }, worker));
+    if (todo.length) this.checksIncomplete = true;
+  }
+
+  /** Controlli a livello di sito: versioni del dominio, barra finale, pagina 404, llms.txt, crawler AI. */
+  private async siteChecks() {
+    if (!this.cfg.controlli.sito || RunStore.readSite(this.runDir)) return;
+    const startUrl = this.cfg.partenza.dominio ?? this.state.seeds[0] ?? this.cfg.partenza.sitemap[0];
+    if (!startUrl) return;
+    this.phase = 'controlli a livello di sito';
+    this.emit(true);
+    const origin = new URL(startUrl).origin;
+    await this.loadRobots(origin);
+    const sample = [...this.eligible.keys()].find((u) => u.startsWith(origin) && new URL(u).pathname.length > 1 && !new URL(u).search && !/\.[a-z0-9]{2,5}$/i.test(new URL(u).pathname)) ?? null;
+    try {
+      const checks = await runSiteChecks({ startUrl, robots: this.robots.get(origin)?.robots ?? null, robotsStatus: this.robots.get(origin)?.status ?? null, samplePage: sample, get: (u, h) => this.get(u, h) });
+      if (this.abort.signal.aborted) {
+        this.checksIncomplete = true;
+        return;
+      }
+      this.store.saveSite(checks);
+    } catch (e) {
+      this.note(`Controlli a livello di sito non riusciti: ${(e as Error).message.split('\n')[0]}`);
+    }
   }
 
   /** Cosa non è stato verificato, in chiaro: finisce nel manifest e nel report. */
@@ -716,6 +801,8 @@ export class Crawler {
     if (login) limits.push(`${n(login, 'indirizzo richiede', 'indirizzi richiedono')} un accesso (risposta 401/403 o redirect a una pagina di login): il contenuto dietro login non è stato verificato.`);
     const errors = pages.filter((p) => p.fetched && p.status === null).length;
     if (errors) limits.push(`${n(errors, 'indirizzo non ha risposto', 'indirizzi non hanno risposto')} (errore di rete o tempo scaduto).`);
+    if (!c.controlli.link) limits.push('Verifica dei link esterni e dei file disattivata nella configurazione: i link rotti verso altri siti non sono stati cercati.');
+    if (!c.controlli.sito) limits.push('Controlli a livello di sito disattivati nella configurazione: versioni del dominio, pagina 404, llms.txt e crawler AI non verificati.');
     if (!c.perimetro.seguiLink) limits.push('I link nelle pagine non sono stati seguiti (scelta della configurazione): visitati solo sitemap ed elenco.');
     this.state.limits = limits;
   }
@@ -801,8 +888,11 @@ export class Crawler {
         if (this.stopping || this.queuedCount() === 0 || this.fetched >= this.cfg.perimetro.maxPagine) break;
       }
 
+      if (!this.stopping) await this.checkLinks();
+      if (!this.stopping) await this.siteChecks();
+
       const left = [...this.entries.keys()].filter((u) => !this.doneUrls.has(u));
-      const paused = this.stopping && (left.length > 0 || this.renderIncomplete);
+      const paused = this.stopping && (left.length > 0 || this.renderIncomplete || this.checksIncomplete);
       this.state.status = paused ? 'in-pausa' : 'completata';
       this.state.not_reached = paused || !left.length
         ? { count: 0, reason: null, examples: [] }

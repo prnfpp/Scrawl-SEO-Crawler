@@ -21,8 +21,8 @@ after(async () => {
 
 const dir = () => mkdtempSync(join(tmpdir(), 'scrawl-r-'));
 const config = (rendering: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
-  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 2 }, rendering: { attesaMs: 100, ...rendering }, ...extra }), '/tmp/prova.yaml');
-const byPath = (pages: ExportedPage[]) => new Map(pages.map((p) => [new URL(p.url).pathname, p]));
+  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 2 }, rendering: { attesaMs: 100, ...rendering }, controlli: { sito: false, link: false }, ...extra }), '/tmp/prova.yaml');
+const byPath = (pages: ExportedPage[]) => new Map(pages.map((p) => [new URL(p.url).pathname + new URL(p.url).search, p]));
 
 test('rendering: ciò che esiste solo dopo JavaScript, link compresi, senza toccare gli analytics', async () => {
   fx.hits.clear();

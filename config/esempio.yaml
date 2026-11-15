@@ -47,3 +47,8 @@ rendering:
   bloccaTracker: true        # le visite non arrivano agli analytics del cliente
   # trackerExtra: [stats.esempio.it]   # altri host di tracciamento da bloccare
   # canale: chrome           # chromium (incluso) | chrome | msedge
+
+controlli:
+  sito: true                 # versioni del dominio, pagina 404, llms.txt, crawler AI
+  link: true                 # verifica dei link esterni e dei file (PDF, immagini)
+  maxLink: 3000              # tetto agli indirizzi verificati

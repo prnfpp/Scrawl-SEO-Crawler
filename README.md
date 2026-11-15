@@ -6,9 +6,9 @@ per indirizzo, i link, i problemi. Descrive fatti e cause; raccomandazioni e pri
 Riusa, copiandole, parti del motore di navigazione di [Scookie](https://github.com/prnfpp/Scookie---Scanner-Cookier)
 (browser, anti-bot, banner, tipologie di pagina, stile dei rapporti).
 
-> **Stato: passo 3 di 8.** Funzionano la scansione, l'analisi di ogni pagina e il confronto tra l'HTML del server e
-> la pagina dopo JavaScript. Controlli di sito, grafo dei link e duplicati, prestazioni, incrocio con Search Console
-> e GA4 e rapporto per il cliente arrivano nei passi successivi.
+> **Stato: passo 4 di 8.** Funzionano la scansione, l'analisi di ogni pagina, il confronto tra l'HTML del server e
+> la pagina dopo JavaScript, i controlli a livello di sito, il grafo dei link e i duplicati. Prestazioni, incrocio
+> con Search Console e GA4 e rapporto per il cliente arrivano nei passi successivi.
 
 ## Installazione (una volta sola)
 
@@ -51,6 +51,15 @@ Per ogni pagina: indicizzabilità con il motivo (robots.txt, noindex, canonical,
 description, H1 e gerarchia dei titoli, parole del contenuto principale, lingua e hreflang, immagini, link con testo
 di ancoraggio e posizione, dati strutturati. E il confronto: cosa cambia dopo JavaScript e cosa esiste solo dopo.
 
+**A livello di sito**: versioni del dominio e relativi redirect, barra finale, codice della pagina 404, robots.txt
+(sintassi, risorse e sezioni bloccate), sitemap (indirizzi non indicizzabili, pagine assenti, date), link verso
+errori e redirect, link esterni rotti, pagine orfane, duplicati di title, description e contenuto, parametri che
+generano copie, paginazione, reciprocità degli hreflang.
+
+**GEO**: per ogni crawler dei motori AI, se robots.txt lo lascia passare (elenco in `data/ai-crawlers.yaml`, con
+la fonte e la data di verifica di ogni nome: si aggiorna lì, senza toccare il codice); presenza di `llms.txt`;
+quanta parte del contenuto principale si legge senza JavaScript.
+
 **Quali pagine si renderizzano.** Fino a 500 pagine, tutte. Sopra: 20 pagine per tipologia, più quelle il cui
 sorgente è sospetto (title assente, contenuto scarso, contenitore dell'applicazione vuoto, pochi link rispetto
 alla tipologia); se in una tipologia almeno il 30% del campione cambia dopo JavaScript, tutte le sue pagine. Ogni
@@ -69,7 +78,7 @@ allunga la pausa. robots.txt si può ignorare solo in modo esplicito, per i siti
 
 ## File prodotti
 
-`runs/<cliente>/<data>/`: `pages.csv`, `pages.json`, `links.csv`, `manifest.json`. Il dizionario dei campi è in
+`runs/<cliente>/<data>/`: `pages.csv`, `pages.json`, `links.csv`, `site.json`, `manifest.json`. Il dizionario dei campi è in
 [docs/FORMATO.md](docs/FORMATO.md). Il formato è versionato (`schema_version`) e le colonne sono bloccate da un test.
 
 ## Rapporto con Scookie

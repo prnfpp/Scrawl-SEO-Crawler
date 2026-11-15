@@ -90,6 +90,15 @@ export interface LinkRow {
   placement?: string;
 }
 
+/** Verifica di un link verso un indirizzo non scansionato: sito esterno, o file del sito (PDF, immagine). */
+export interface LinkCheck {
+  url: string;
+  kind: 'esterno' | 'file';
+  status: number | null;
+  final_url: string | null;
+  error: string | null;
+}
+
 export type RunStatus = 'in-corso' | 'in-pausa' | 'completata' | 'interrotta';
 
 export interface RunState {
@@ -165,7 +174,7 @@ export class RunStore {
 
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true });
-    for (const f of ['frontiera.jsonl', 'pagine.jsonl', 'link.jsonl', 'render.jsonl', 'link-render.jsonl']) dropPartialLine(join(dir, f));
+    for (const f of ['frontiera.jsonl', 'pagine.jsonl', 'link.jsonl', 'render.jsonl', 'link-render.jsonl', 'controllo-link.jsonl']) dropPartialLine(join(dir, f));
     this.fdFrontier = openSync(join(dir, 'frontiera.jsonl'), 'a');
     this.fdPages = openSync(join(dir, 'pagine.jsonl'), 'a');
     this.fdLinks = openSync(join(dir, 'link.jsonl'), 'a');
@@ -215,6 +224,50 @@ export class RunStore {
 
   addRenderLinks(rows: RenderLinkRow[]) {
     if (rows.length) writeSync(this.fdRenderLinks, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  }
+
+  static readLinkChecks(dir: string): LinkCheck[] {
+    return readJsonl<LinkCheck>(join(dir, 'controllo-link.jsonl'));
+  }
+
+  addLinkCheck(row: LinkCheck) {
+    appendFileSync(join(this.dir, 'controllo-link.jsonl'), `${JSON.stringify(row)}\n`);
+  }
+
+  /** Fogli di stile e script visti nelle pagine, uno per riga. */
+  static readAssets(dir: string): string[] {
+    const p = join(dir, 'risorse.txt');
+    return existsSync(p) ? readFileSync(p, 'utf8').split('\n').filter(Boolean) : [];
+  }
+
+  addAssets(urls: string[]) {
+    if (urls.length) appendFileSync(join(this.dir, 'risorse.txt'), urls.join('\n') + '\n');
+  }
+
+  /** Testo dei robots.txt letti, per host: serve all'analisi (risorse bloccate, crawler AI). */
+  static readRobotsTexts(dir: string): Record<string, string> {
+    try {
+      return JSON.parse(readFileSync(join(dir, 'robots.json'), 'utf8')) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  saveRobotsText(host: string, text: string) {
+    writeFileSync(join(this.dir, 'robots.json'), JSON.stringify({ ...RunStore.readRobotsTexts(this.dir), [host]: text.slice(0, 500000) }));
+  }
+
+  /** Controlli a livello di sito fatti a fine scansione. */
+  static readSite<T>(dir: string): T | null {
+    try {
+      return JSON.parse(readFileSync(join(dir, 'sito.json'), 'utf8')) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  saveSite(data: unknown) {
+    writeFileSync(join(this.dir, 'sito.json'), JSON.stringify(data, null, 2));
   }
 
   static readFrontier(dir: string): FrontierEntry[] {

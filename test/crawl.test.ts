@@ -12,7 +12,7 @@ import { startUi } from '../src/ui/server.js';
 import { startFixture, type Fixture } from './fixtures/server.js';
 
 /** Indirizzi del sito di prova raggiungibili senza JavaScript. */
-const BASE_PATHS = ['/', '/a', '/b', '/blog/post-1', '/blog/post-2', '/c', '/deep/1', '/deep/2', '/deep/3', '/loop1', '/loop2', '/missing', '/orfana', '/privato/x', '/redir', '/redir2', '/js/spa', '/noindex', '/canon', '/jsnoindex', '/prodotto', '/xrobots'];
+const BASE_PATHS = ['/', '/a', '/b', '/blog/post-1', '/blog/post-2', '/c', '/deep/1', '/deep/2', '/deep/3', '/loop1', '/loop2', '/missing', '/orfana', '/privato/x', '/redir', '/redir2', '/js/spa', '/noindex', '/canon', '/jsnoindex', '/prodotto', '/xrobots', '/dup1', '/dup2', '/near', '/it/pagina', '/en/page', '/a?sort=asc', '/lista', '/lista?page=2', '/canon2'];
 
 let fx: Fixture;
 before(async () => {
@@ -24,7 +24,7 @@ after(async () => {
 
 const dir = () => mkdtempSync(join(tmpdir(), 'scrawl-'));
 const config = (extra: Record<string, unknown> = {}) =>
-  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 3 }, rendering: { attivo: false }, ...extra }), '/tmp/prova.yaml');
+  loadConfigText(stringify({ cliente: 'Sito di prova', partenza: { dominio: `${fx.origin}/` }, cortesia: { pausaMs: 0, paralleli: 3 }, rendering: { attivo: false }, controlli: { sito: false, link: false }, ...extra }), '/tmp/prova.yaml');
 const byPath = (rows: PageRow[]) => new Map(rows.map((r) => [new URL(r.url).pathname + new URL(r.url).search, r]));
 
 test('scansione completa: perimetro, redirect, robots, sitemap, profondità', async () => {
@@ -73,7 +73,7 @@ test('scansione completa: perimetro, redirect, robots, sitemap, profondità', as
   assert.equal(rows.get('/b')!.in_sitemap, false);
 
   // nessuna pagina richiesta due volte
-  for (const [path, n] of fx.hits) if (!['/robots.txt', '/sitemap.xml', '/loop1', '/loop2', '/a'].includes(path)) assert.equal(n, 1, `${path} richiesta ${n} volte`);
+  for (const [path, n] of fx.hits) if (!['/robots.txt', '/sitemap.xml', '/loop1', '/loop2', '/a', '/lista'].includes(path)) assert.equal(n, 1, `${path} richiesta ${n} volte`);
 
   // fuori perimetro: contati e dichiarati
   assert.equal(state.excluded['altro dominio'].count, 1);
@@ -83,7 +83,7 @@ test('scansione completa: perimetro, redirect, robots, sitemap, profondità', as
 
   // link
   const links = RunStore.readLinks(d);
-  const ext = links.find((l) => l.target_url === 'https://example.org/')!;
+  const ext = links.find((l) => l.target_url.endsWith('/esterno-rotto'))!;
   assert.equal(ext.is_internal, false);
   assert.equal(links.find((l) => l.source_url === `${fx.origin}/` && l.target_url === `${fx.origin}/a`)!.anchor, 'vai a /a');
 
@@ -119,7 +119,7 @@ test('pausa e ripresa: stesso risultato, nessuna pagina ripetuta', async () => {
   const rows = RunStore.readPages(d);
   assert.deepEqual(rows.map((r) => r.url).sort(), expected);
   assert.equal(new Set(rows.map((r) => r.url)).size, rows.length, 'nessuna riga doppia');
-  for (const [path, n] of fx.hits) if (!['/robots.txt', '/sitemap.xml', '/loop1', '/loop2', '/a'].includes(path)) assert.equal(n, 1, `${path} richiesta ${n} volte`);
+  for (const [path, n] of fx.hits) if (!['/robots.txt', '/sitemap.xml', '/loop1', '/loop2', '/a', '/lista'].includes(path)) assert.equal(n, 1, `${path} richiesta ${n} volte`);
   assert.ok(s2.elapsed_s >= s1.elapsed_s);
 });
 

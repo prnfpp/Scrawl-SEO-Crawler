@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pageType, sectionsOf, toCsv } from '../scookie/index.js';
 import { parse } from 'yaml';
@@ -8,6 +8,8 @@ import { normalizeUrl } from '../crawl/scope.js';
 import { RunStore, SCHEMA_VERSION, type PageRow, type RenderRow } from '../crawl/store.js';
 import { canonicalOf, indexability, linkHeaderCanonical, xRobots, type CanonicalType } from '../extract/compare.js';
 import { headingIssues, type PageFacts } from '../extract/extract.js';
+import { ANALYSIS_COLUMNS, analyzeSite, type MergedLink, type SiteReport } from '../analyze/site.js';
+import type { SiteChecks } from '../site/checks.js';
 import { TOOL_VERSION } from '../version.js';
 
 /**
@@ -27,6 +29,8 @@ export const PAGE_COLUMNS = [
   'schema_types', 'schema_formats', 'schema_errors', 'schema_missing_required', 'schema_missing_recommended', 'schema_content_mismatch',
   // sorgente contro renderizzato
   'rendered', 'render_reason', 'render_error', 'raw_title', 'raw_description', 'raw_canonical', 'raw_robots_meta', 'raw_h1', 'raw_word_count', 'raw_schema_types', 'raw_outlinks_internal', 'diff_fields', 'js_only_fields', 'content_raw_ratio', 'links_only_rendered', 'links_only_raw', 'tracker_requests_blocked',
+  // analisi tra pagine (passo 4)
+  ...ANALYSIS_COLUMNS,
 ] as const;
 
 export const LINK_COLUMNS = ['source_url', 'target_url', 'anchor', 'rel', 'nofollow', 'is_internal', 'in_raw', 'in_rendered', 'target_status', 'target_final_url', 'placement'] as const;
@@ -72,7 +76,7 @@ function savedConfig(runDir: string): CrawlConfig | null {
  * quello del DOM renderizzato se la pagina è stata renderizzata, altrimenti quello dell'HTML del server.
  * I campi raw_* sono sempre l'HTML del server.
  */
-export function loadPages(runDir: string): ExportedPage[] {
+function basePages(runDir: string): ExportedPage[] {
   const rows = RunStore.readPages(runDir);
   const seen = new Set<string>();
   const unique = rows.filter((r) => (seen.has(r.url) ? false : (seen.add(r.url), true)));
@@ -193,9 +197,77 @@ export function loadPages(runDir: string): ExportedPage[] {
       headings: f?.headings ?? [],
       images_heaviest: rd?.images.heaviest ?? [],
       rendered_url: rd?.rendered_url ?? null,
-    };
+    } as unknown as ExportedPage;
   });
 }
+
+/** Link del sorgente e del renderizzato, uniti per pagina e destinazione. */
+function mergedLinks(runDir: string): MergedLink[] {
+  const rendered = new Set(RunStore.readRender(runDir).filter((r) => r.facts).map((r) => r.url));
+  const inRender = new Map<string, Set<string>>();
+  const renderLinks = RunStore.readRenderLinks(runDir);
+  for (const l of renderLinks) {
+    const set = inRender.get(l.source_url);
+    if (set) set.add(l.target_url);
+    else inRender.set(l.source_url, new Set([l.target_url]));
+  }
+  const inRaw = new Map<string, Set<string>>();
+  const out: MergedLink[] = [];
+  for (const l of RunStore.readLinks(runDir)) {
+    const set = inRaw.get(l.source_url);
+    if (set) set.add(l.target_url);
+    else inRaw.set(l.source_url, new Set([l.target_url]));
+    out.push({ source_url: l.source_url, target_url: l.target_url, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: l.is_internal, in_raw: true, in_rendered: rendered.has(l.source_url) ? (inRender.get(l.source_url)?.has(l.target_url) ?? false) : null, placement: l.placement ?? '' });
+  }
+  for (const l of renderLinks) {
+    if (inRaw.get(l.source_url)?.has(l.target_url)) continue;
+    out.push({ source_url: l.source_url, target_url: l.target_url, anchor: l.anchor, rel: l.rel, nofollow: l.nofollow, is_internal: l.is_internal, in_raw: false, in_rendered: true, placement: l.placement });
+  }
+  return out;
+}
+
+export interface LoadedRun {
+  pages: ExportedPage[];
+  links: MergedLink[];
+  site: SiteReport;
+}
+
+const cache = new Map<string, { stamp: string; run: LoadedRun }>();
+
+/**
+ * Tutti i dati di una scansione, con l'analisi tra pagine. Il risultato resta in memoria finché i file della
+ * scansione non cambiano: l'interfaccia lo chiede a ogni filtro e su un sito grande rileggerlo ogni volta è lento.
+ */
+export function loadRun(runDir: string): LoadedRun {
+  const stamp = ['pagine.jsonl', 'render.jsonl', 'link.jsonl', 'link-render.jsonl', 'controllo-link.jsonl', 'sito.json']
+    .map((f) => (existsSync(join(runDir, f)) ? statSync(join(runDir, f)).size : 0))
+    .join(':');
+  const hit = cache.get(runDir);
+  if (hit && hit.stamp === stamp) return hit.run;
+  const cfg = savedConfig(runDir);
+  const state = RunStore.readState(runDir);
+  const ignored = cfg?.perimetro.parametriIgnorati ?? [];
+  const pages = basePages(runDir);
+  const links = mergedLinks(runDir);
+  const site = analyzeSite(pages, {
+    links,
+    seeds: state?.seeds ?? [],
+    sitemap: RunStore.readSitemapEntries(runDir),
+    sitemapFiles: state?.sitemaps ?? [],
+    checks: RunStore.readLinkChecks(runDir),
+    site: RunStore.readSite<SiteChecks>(runDir),
+    assets: RunStore.readAssets(runDir),
+    robotsText: RunStore.readRobotsTexts(runDir),
+    followedLinks: !cfg || (cfg.modalita === 'completa' && cfg.perimetro.seguiLink),
+    normalize: (u) => normalizeUrl(u, undefined, ignored),
+  });
+  const run = { pages, links, site };
+  if (cache.size > 4) cache.clear();
+  cache.set(runDir, { stamp, run });
+  return run;
+}
+
+export const loadPages = (runDir: string): ExportedPage[] => loadRun(runDir).pages;
 
 /** Valore di una cella CSV: elenchi separati da " | ", booleani true/false, vuoto per il dato assente. */
 function cell(c: Column, p: ExportedPage): unknown {
@@ -210,42 +282,31 @@ function cell(c: Column, p: ExportedPage): unknown {
 
 const bool = (v: boolean | null | undefined) => (v === null || v === undefined ? '' : v ? 'true' : 'false');
 
-/** Scrive i file di dati della scansione: pages.csv, pages.json, links.csv, manifest.json. */
+/** Scrive i file di dati della scansione: pages.csv, pages.json, links.csv, site.json, manifest.json. */
 export function exportRun(runDir: string): string[] {
-  const pages = loadPages(runDir);
+  const { pages, links, site } = loadRun(runDir);
   const state = RunStore.readState(runDir);
   const byUrl = new Map(pages.map((p) => [p.url, p]));
+  const checks = new Map(RunStore.readLinkChecks(runDir).map((c) => [c.url, c]));
 
   writeFileSync(join(runDir, 'pages.csv'), toCsv([...PAGE_COLUMNS], pages.map((p) => PAGE_COLUMNS.map((c) => cell(c, p)))));
   writeFileSync(join(runDir, 'pages.json'), JSON.stringify(pages, null, 1));
 
-  // Link: quelli del sorgente e quelli del renderizzato, uniti per pagina e destinazione
-  const rendered = new Set(RunStore.readRender(runDir).filter((r) => r.facts).map((r) => r.url));
-  const inRender = new Map<string, Set<string>>();
-  const renderLinks = RunStore.readRenderLinks(runDir);
-  for (const l of renderLinks) {
-    const set = inRender.get(l.source_url);
-    if (set) set.add(l.target_url);
-    else inRender.set(l.source_url, new Set([l.target_url]));
-  }
-  const inRaw = new Map<string, Set<string>>();
-  const out: unknown[][] = [];
+  // Codice della destinazione: dalla scansione, o dalla verifica dei link per gli indirizzi non scansionati
   const target = (url: string) => {
     const t = byUrl.get(url);
-    return [t?.status ?? '', t && t.final_url && t.final_url !== t.url ? t.final_url : ''];
+    if (t) return [t.status ?? '', t.final_url && t.final_url !== t.url ? t.final_url : ''];
+    const c = checks.get(url);
+    return c ? [c.status ?? '', c.final_url && c.final_url !== c.url ? c.final_url : ''] : ['', ''];
   };
-  for (const l of RunStore.readLinks(runDir)) {
-    const set = inRaw.get(l.source_url);
-    if (set) set.add(l.target_url);
-    else inRaw.set(l.source_url, new Set([l.target_url]));
-    const r = rendered.has(l.source_url) ? (inRender.get(l.source_url)?.has(l.target_url) ?? false) : null;
-    out.push([l.source_url, l.target_url, l.anchor, l.rel, bool(l.nofollow), bool(l.is_internal), 'true', bool(r), ...target(l.target_url), l.placement ?? '']);
-  }
-  for (const l of renderLinks) {
-    if (inRaw.get(l.source_url)?.has(l.target_url)) continue;
-    out.push([l.source_url, l.target_url, l.anchor, l.rel, bool(l.nofollow), bool(l.is_internal), 'false', 'true', ...target(l.target_url), l.placement]);
-  }
-  writeFileSync(join(runDir, 'links.csv'), toCsv([...LINK_COLUMNS], out));
+  writeFileSync(
+    join(runDir, 'links.csv'),
+    toCsv(
+      [...LINK_COLUMNS],
+      links.map((l) => [l.source_url, l.target_url, l.anchor, l.rel, bool(l.nofollow), bool(l.is_internal), bool(l.in_raw), bool(l.in_rendered), ...target(l.target_url), l.placement]),
+    ),
+  );
+  writeFileSync(join(runDir, 'site.json'), JSON.stringify({ schema_version: SCHEMA_VERSION, ...site }, null, 2));
 
   writeFileSync(
     join(runDir, 'manifest.json'),
@@ -262,7 +323,7 @@ export function exportRun(runDir: string): string[] {
         ended_at: state?.ended_at ?? null,
         user_agent: state?.user_agent ?? null,
         seeds: state?.seeds ?? [],
-        counts: { pages: pages.length, links: out.length, rendered: pages.filter((p) => p.rendered).length },
+        counts: { pages: pages.length, links: links.length, rendered: pages.filter((p) => p.rendered).length, links_checked: checks.size },
         rendering: state?.rendering ?? null,
         sitemaps: state?.sitemaps ?? [],
         robots: state?.robots ?? [],
@@ -271,11 +332,11 @@ export function exportRun(runDir: string): string[] {
         not_reached: state?.not_reached ?? null,
         not_verified: state?.limits ?? [],
         notes: state?.notes ?? [],
-        files: { pages: ['pages.csv', 'pages.json'], links: ['links.csv'], config: 'config.yaml' },
+        files: { pages: ['pages.csv', 'pages.json'], links: ['links.csv'], site: 'site.json', config: 'config.yaml' },
       },
       null,
       2,
     ),
   );
-  return ['pages.csv', 'pages.json', 'links.csv', 'manifest.json'];
+  return ['pages.csv', 'pages.json', 'links.csv', 'site.json', 'manifest.json'];
 }

@@ -115,6 +115,12 @@ table.kv th { background: var(--warm); position: static; white-space: normal; wi
 table.kv td { overflow-wrap: anywhere; } td.chg { background: var(--warn-soft); }
 #detail h3 { margin-bottom: 6px; } #detail ul { margin: 0; padding-left: 18px; }
 #detail { scroll-margin-top: 76px; }
+.area h3 { margin-bottom: 6px; } .checks { display: grid; gap: 2px; }
+.check { padding: 7px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: start; font-size: .92rem; }
+details.check { display: block; } details.check summary { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: start; cursor: pointer; list-style: none; }
+details.check summary::-webkit-details-marker { display: none; } details.check summary b::before { content: '▸ '; color: var(--ink-2); } details.check[open] summary b::before { content: '▾ '; }
+details.check ul { margin: 8px 0 4px 122px; padding-left: 16px; overflow-wrap: anywhere; } .check .pill { justify-self: start; }
+@media (max-width: 640px) { .check, details.check summary { grid-template-columns: 1fr; gap: 4px; } details.check ul { margin-left: 0; } }
 .code { font-weight: 700; font-variant-numeric: tabular-nums; }
 .code.c2 { color: var(--ok); } .code.c3 { color: var(--warn); } .code.c4, .code.c5, .code.ce { color: var(--bad); }
 pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm); border-radius: 10px; padding: 10px 12px; font: .78rem/1.5 var(--f-mono); white-space: pre-wrap; }
@@ -282,6 +288,7 @@ pre.log { margin: 0; max-height: 180px; overflow: auto; background: var(--warm);
       </div>
       <div class="note warn" id="run-limits" hidden></div>
       <div class="note" id="run-notes" hidden></div>
+      <div class="card stack" id="site" hidden></div>
       <div class="card stack">
         <div class="chips" id="filters" role="group" aria-label="Filtra per esito"></div>
         <div class="grid2">
@@ -344,7 +351,8 @@ function dur(s) {
 }
 const STATUS = { 'in-corso': ['In corso', 'run'], 'in-pausa': ['In pausa', 'warn'], completata: ['Completata', 'ok'], interrotta: ['Interrotta', 'bad'] };
 const CLASSES = { ok: 'Risposta corretta (2xx)', redirect: 'Redirect (3xx)', client: 'Non trovate o vietate (4xx)', server: 'Errore del server (5xx)', errore: 'Nessuna risposta', bloccate: 'Vietate da robots.txt' };
-Object.assign(CLASSES, { nonindex: 'Non indicizzabili', jsdiff: 'Cambiano dopo JavaScript', jsonly: 'Con parti solo dopo JavaScript', schema: 'Dati strutturati con errori' });
+Object.assign(CLASSES, { nonindex: 'Non indicizzabili', jsdiff: 'Cambiano dopo JavaScript', jsonly: 'Con parti solo dopo JavaScript', schema: 'Dati strutturati con errori', orfane: 'Orfane', duplicati: 'Duplicati', linkrotti: 'Con link rotti', canonical: 'Canonical da verificare' });
+const LEVEL = { ok: ['a posto', 'ok'], attenzione: ['da guardare', 'warn'], problema: ['problema', 'bad'], info: ['informazione', ''], 'non-verificato': ['non verificato', ''] };
 const FIELD = { url: 'indirizzo', title: 'title', description: 'description', canonical: 'canonical', robots_meta: 'meta robots', h1: 'H1', lang: 'lingua', hreflang: 'hreflang', schema_types: 'dati strutturati', content: 'contenuto', links: 'link interni' };
 const SOURCE = { partenza: 'punto di partenza', link: 'link', sitemap: 'sitemap', elenco: 'elenco', redirect: 'redirect' };
 const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -516,6 +524,7 @@ function renderScan() {
   const rendering = p.phase.startsWith('rendering') && p.toRender > 0;
   const total = Math.min(p.limit, p.done + p.queued + p.inFlight) || 1;
   const pct = Math.min(100, Math.round((rendering ? p.rendered / p.toRender : p.done / total) * 100));
+  if (p.phase.startsWith('verifica dei link') && p.linksToCheck) $('#scan-phase').textContent = `Verifica dei link esterni e dei file: ${nf.format(p.linksChecked)} di ${nf.format(p.linksToCheck)}`;
   if (rendering) $('#scan-phase').textContent = `Rendering con il browser: ${nf.format(p.rendered)} di ${nf.format(p.toRender)} pagine`;
   $('#k-render').textContent = p.toRender ? `${nf.format(p.rendered)} / ${nf.format(p.toRender)}` : '–';
   $('#bar i').style.width = pct + '%';
@@ -567,10 +576,27 @@ async function openRun(id) {
   for (const s of $$('main > section')) s.hidden = s.id !== 'tab-risultati';
   for (const b of $$('nav.tabs button')) b.dataset.tab === 'risultati' ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
   $('#runs-view').hidden = true; $('#run-view').hidden = false;
+  $('#site').hidden = true;
   await loadRows(true);
+  loadSite();
   window.scrollTo(0, 0);
 }
 $('#back-runs').addEventListener('click', () => show('risultati'));
+/** Controlli a livello di sito: una riga per controllo, con gli esempi a richiesta. */
+async function loadSite() {
+  const box = $('#site');
+  let d;
+  try { d = await api(`/api/scansioni/${view.id}/sito`); } catch (e) { box.hidden = true; return; }
+  const areas = [...new Set(d.items.map((i) => i.area))];
+  const count = (lv) => d.items.filter((i) => i.level === lv).length;
+  box.replaceChildren(
+    h('div', { class: 'row spread' }, h('h2', {}, 'Controlli a livello di sito'), h('p', { class: 'small' }, h('span', { class: 'pill bad' }, `${count('problema')} problemi`), ' ', h('span', { class: 'pill warn' }, `${count('attenzione')} da guardare`), ' ', h('span', { class: 'pill ok' }, `${count('ok')} a posto`), count('non-verificato') ? [' ', h('span', { class: 'pill' }, `${count('non-verificato')} non verificati`)] : null)),
+    ...areas.map((a) => h('div', { class: 'area' }, h('h3', {}, a), h('div', { class: 'checks' }, d.items.filter((i) => i.area === a).map((i) => {
+      const head = [h('span', { class: 'pill ' + LEVEL[i.level][1] }, LEVEL[i.level][0]), h('span', {}, h('b', {}, i.title + '. '), i.text)];
+      return i.details.length ? h('details', { class: 'check' }, h('summary', {}, head), h('ul', { class: 'small mono' }, i.details.map((t) => h('li', {}, t)))) : h('div', { class: 'check' }, head);
+    })))));
+  box.hidden = false;
+}
 async function loadRows(reset) {
   if (reset) view.da = 0;
   let d;
@@ -582,7 +608,7 @@ async function loadRows(reset) {
   const dl = (name, label) => h('a', { class: 'btn', href: `/api/scansioni/${view.id}/file?nome=${name}`, download: name }, label);
   $('#run-actions').replaceChildren(
     ...(resumable ? [h('button', { class: 'btn primary', onclick: (e) => act(e.currentTarget, () => resume(r.id)) }, 'Riprendi la scansione')] : []),
-    ...(r.exported ? [dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)'), dl('manifest.json', 'Manifest')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
+    ...(r.exported ? [dl('pages.csv', 'Pagine (CSV)'), dl('links.csv', 'Link (CSV)'), dl('site.json', 'Sito (JSON)'), dl('manifest.json', 'Manifest')] : [h('button', { class: 'btn', onclick: (e) => act(e.currentTarget, async () => { await api(`/api/scansioni/${view.id}/esporta`, {}); await loadRows(true); toast('File di dati creati'); }) }, 'Crea i file di dati')]));
   const lim = $('#run-limits');
   lim.hidden = !r.limits.length;
   lim.replaceChildren(h('b', {}, 'Cosa non è stato verificato'), h('ul', {}, r.limits.map((t) => h('li', {}, t))));
@@ -624,7 +650,9 @@ function showDetail(p) {
     ['Canonical', `${p.canonical_type ?? '–'}${p.canonical ? ` · ${p.canonical}` : ''}`],
     ['Meta robots · X-Robots-Tag', `${val(p.robots_meta)} · ${val(p.x_robots_tag)}`],
     ['Lingua · hreflang', `${val(p.lang)} · ${p.hreflang_count ?? 0} alternative`],
-    ['Trovata', `${SOURCE[p.source] || p.source}${p.found_on ? ` in ${p.found_on}` : ''} · livello ${p.depth ?? '–'} · ${p.in_sitemap ? 'in sitemap' : 'non in sitemap'}`],
+    ['Trovata', `${SOURCE[p.source] || p.source}${p.found_on ? ` in ${p.found_on}` : ''} · livello ${p.depth ?? '–'} · ${p.in_sitemap ? 'in sitemap' : 'non in sitemap'}${p.sitemap_issue ? ` · ${p.sitemap_issue}` : ''}`],
+    ['Link', `${p.inlinks} pagine la linkano${p.orphan ? ' · orfana' : ''}${p.outlinks_to_error ? ` · ${p.outlinks_to_error} link verso errori` : ''}${p.outlinks_to_redirect ? ` · ${p.outlinks_to_redirect} verso redirect` : ''}${p.outlinks_external_broken ? ` · ${p.outlinks_external_broken} esterni rotti` : ''}`],
+    ['Duplicati', p.indexable ? `${p.title_duplicates} con lo stesso title · ${p.content_duplicates} con contenuto identico · ${p.near_duplicates} quasi uguali${p.duplicate_group && p.duplicate_group !== p.url ? ` · gruppo di ${p.duplicate_group}` : ''}${p.param_duplicate_of ? ` · copia con parametri di ${p.param_duplicate_of}` : ''}` : '–'],
     ['Immagini', p.images_count == null ? '–' : `${p.images_count} · ${p.images_missing_alt} senza testo alternativo · ${p.images_missing_dimensions} senza dimensioni${p.images_bytes != null ? ` · ${nf.format(Math.round(p.images_bytes / 1024))} KB scaricati · ${p.images_heavy} oltre 200 KB` : ''}`],
     ['Rendering', p.rendered ? `${p.render_reason} · ${p.tracker_requests_blocked} richieste di tracciamento bloccate` : p.render_error ? `non riuscito: ${p.render_error}` : p.render_reason || '–'],
   ];
@@ -642,6 +670,8 @@ function showDetail(p) {
         cmp('Parole del contenuto principale', 'content', p.raw_word_count, p.word_count),
         cmp('Link interni', 'links', p.raw_outlinks_internal, p.rendered ? `${p.outlinks_internal} (${p.links_only_rendered} solo dopo JavaScript, ${p.links_only_raw} solo nel sorgente)` : null),
         cmp('Dati strutturati', 'schema_types', p.raw_schema_types, p.schema_types))))) : null,
+    list('Canonical', p.canonical_issue),
+    list('Hreflang', p.hreflang_issues),
     list('Gerarchia dei titoli', p.heading_issues),
     list('Dati strutturati: errori di sintassi', p.schema_errors),
     list('Dati strutturati: proprietà obbligatorie mancanti', p.schema_missing_required),

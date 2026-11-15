@@ -8,7 +8,8 @@ import { stringify } from 'yaml';
 import { ConfigError, loadConfigText } from '../config/load.js';
 import { Crawler, type Progress } from '../crawl/crawler.js';
 import { RunStore, type RunState } from '../crawl/store.js';
-import { exportRun, loadPages } from '../report/export.js';
+import { siteSummary } from '../analyze/summary.js';
+import { exportRun, loadPages, loadRun } from '../report/export.js';
 import { TOOL_VERSION } from '../version.js';
 
 export interface UiOptions {
@@ -199,7 +200,7 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
       return { id };
     }
 
-    const m = /^\/api\/scansioni\/([^/]+\/[^/]+)\/(pausa|riprendi|pagine|esporta|file)$/.exec(decodeURIComponent(path));
+    const m = /^\/api\/scansioni\/([^/]+\/[^/]+)\/(pausa|riprendi|pagine|sito|esporta|file)$/.exec(decodeURIComponent(path));
     if (m) {
       const [, id, action] = m;
       if (action === 'pausa' && method === 'POST') {
@@ -218,11 +219,12 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
       if (action === 'esporta' && method === 'POST') return { files: exportRun(dir) };
       if (action === 'file' && method === 'GET') {
         const name = url.searchParams.get('nome') ?? '';
-        if (!/^(pages\.csv|pages\.json|links\.csv|manifest\.json|config\.yaml|registro\.log)$/.test(name) || !existsSync(join(dir, name))) throw new HttpError(404, 'File non trovato');
+        if (!/^(pages\.csv|pages\.json|links\.csv|site\.json|manifest\.json|config\.yaml|registro\.log)$/.test(name) || !existsSync(join(dir, name))) throw new HttpError(404, 'File non trovato');
         res.writeHead(200, { 'content-type': name.endsWith('.csv') ? 'text/csv; charset=utf-8' : name.endsWith('.json') ? 'application/json' : 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${name}"` });
         createReadStream(join(dir, name)).pipe(res);
         return undefined;
       }
+      if (action === 'sito' && method === 'GET') return { items: siteSummary(loadRun(dir).site) };
       if (action === 'pagine' && method === 'GET') {
         const q = (url.searchParams.get('q') ?? '').toLowerCase();
         const filter = url.searchParams.get('filtro') ?? '';
@@ -237,8 +239,12 @@ export async function startUi(opts: UiOptions): Promise<{ server: Server; url: s
           jsdiff: (p) => p.diff_fields.length > 0,
           jsonly: (p) => p.js_only_fields.length > 0,
           schema: (p) => (p.schema_errors as string[]).length + (p.schema_missing_required as string[]).length > 0,
+          orfane: (p) => p.orphan === true,
+          duplicati: (p) => !!p.duplicate_group || Number(p.title_duplicates ?? 0) > 0,
+          linkrotti: (p) => Number(p.outlinks_to_error ?? 0) + Number(p.outlinks_external_broken ?? 0) > 0,
+          canonical: (p) => (p.canonical_issue as string[]).length > 0,
         };
-        const extra: Record<string, number> = { nonindex: 0, jsdiff: 0, jsonly: 0, schema: 0 };
+        const extra: Record<string, number> = { nonindex: 0, jsdiff: 0, jsonly: 0, schema: 0, orfane: 0, duplicati: 0, linkrotti: 0, canonical: 0 };
         for (const p of all) {
           counts[klass(p)]++;
           templates[p.template] = (templates[p.template] ?? 0) + 1;

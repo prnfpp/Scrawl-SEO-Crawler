@@ -109,6 +109,16 @@ export const configSchema = z
         viewport: z.object({ width: z.number().int(), height: z.number().int() }).default({ width: 1366, height: 900 }),
       })
       .prefault({}),
+    /** Controlli a livello di sito e verifica dei link verso indirizzi non scansionati (esterni, file). */
+    controlli: z
+      .object({
+        /** Versioni del dominio, pagina 404, llms.txt, crawler dei motori AI. */
+        sito: z.boolean().default(true),
+        /** Verifica che i link esterni e i link a file (PDF, immagini) rispondano. */
+        link: z.boolean().default(true),
+        maxLink: z.number().int().min(0).max(20000).default(3000),
+      })
+      .prefault({}),
   })
   .strict();
 

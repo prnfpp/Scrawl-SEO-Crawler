@@ -17,9 +17,10 @@ Questi file sono l'input della skill di pre-analisi SEO e GEO. I nomi dei campi 
 |---|---|---|
 | `pages.csv`, `pages.json` | una riga per indirizzo | sì |
 | `links.csv` | una riga per link trovato | sì |
+| `site.json` | controlli a livello di sito e riepiloghi tra pagine | sì |
 | `manifest.json` | versione del formato, perimetro, limiti, cosa non è stato verificato | sì |
 | `config.yaml` | configurazione usata (copia: la ripresa usa questa) | sì |
-| `pagine.jsonl`, `link.jsonl`, `render.jsonl`, `link-render.jsonl`, `frontiera.jsonl`, `sitemap.jsonl`, `stato.json`, `registro.log` | dati di lavoro per la ripresa | no: non usarli come input |
+| `pagine.jsonl`, `link.jsonl`, `render.jsonl`, `link-render.jsonl`, `controllo-link.jsonl`, `frontiera.jsonl`, `sitemap.jsonl`, `sito.json`, `robots.json`, `risorse.txt`, `stato.json`, `registro.log` | dati di lavoro per la ripresa | no: non usarli come input |
 
 **CSV**: separatore `;`, UTF-8 con BOM (si aprono in Excel con impostazioni italiane), prima riga con i nomi dei
 campi. Vuoto = dato assente. Booleani: `true` / `false`. Elenchi: valori separati da ` | `. Una cella che inizia
@@ -32,7 +33,7 @@ codice usare `pages.json`**; i CSV sono per la lettura in un foglio di calcolo.
 conta: quello del DOM dopo JavaScript se `rendered` è `true`, altrimenti quello dell'HTML del server. I campi
 `raw_*` sono sempre l'HTML del server. `diff_fields` dice quali campi cambiano tra i due.
 
-## pages (stato: passo 3)
+## pages (stato: passo 4)
 
 ### Risposta
 
@@ -48,7 +49,7 @@ conta: quello del DOM dopo JavaScript se `rendered` è `true`, altrimenti quello
 | `redirect_to` | testo | Destinazione dichiarata da questo indirizzo (primo passaggio). |
 | `content_type` | testo | Intestazione Content-Type (vuota per i redirect). |
 | `template` | testo | Modello di pagina, dalla struttura dell'indirizzo o dalle regole `campionamento.tipi`. |
-| `depth` | numero | Clic dal punto di partenza. Vuoto: finora non raggiungibile dai link (nota solo da sitemap o elenco). Al passo 4 viene ricalcolata sul grafo dei link. |
+| `depth` | numero | Clic dal punto di partenza: cammino più breve sul grafo dei link (un redirect non costa un clic). Vuoto: non raggiungibile dai link. |
 | `source` | `partenza` `link` `sitemap` `elenco` `redirect` | Come è stato scoperto l'indirizzo. Se è in sitemap ma anche raggiunto da un link: `link`. |
 | `found_on` | testo | Pagina in cui è stato trovato per la prima volta. |
 | `in_sitemap` | booleano | Presente in una delle sitemap lette. |
@@ -72,8 +73,7 @@ conta: quello del DOM dopo JavaScript se `rendered` è `true`, altrimenti quello
 | `indexable` | booleano | Esito per la singola pagina. Vuoto: non è una pagina HTML. |
 | `indexability_reason` | testo | Perché non è indicizzabile: redirect, errore, robots.txt, noindex (meta, intestazione, aggiunto da JavaScript), canonical verso un'altra pagina. |
 
-Al passo 4 si aggiungono i controlli che richiedono altre pagine: canonical verso una pagina non indicizzabile,
-conflitti con sitemap e hreflang.
+I controlli che richiedono altre pagine sono in `canonical_issue`, `hreflang_issues` e `sitemap_issue`.
 
 ### Contenuto
 
@@ -87,7 +87,7 @@ conflitti con sitemap e hreflang.
 | `content_hash` | testo | Uguale tra due pagine solo se il contenuto principale è identico. |
 | `content_simhash` | testo | Impronta a 64 bit per i quasi duplicati (pochi bit di differenza = testi quasi uguali). Vuota sotto le 20 parole. |
 | `lang` | testo | Attributo `lang` di `<html>`. |
-| `hreflang`, `hreflang_count` | elenco, numero | CSV: `it=url \| en=url`. JSON: elenco di `{lang, href}`. La reciprocità arriva al passo 4. |
+| `hreflang`, `hreflang_count` | elenco, numero | CSV: `it=url \| en=url`. JSON: elenco di `{lang, href}`. Reciprocità in `hreflang_reciprocal`. |
 | `viewport` | testo | Meta viewport. |
 
 ### Link e immagini
@@ -124,11 +124,31 @@ conflitti con sitemap e hreflang.
 | `links_only_rendered`, `links_only_raw` | numeri | Link interni presenti solo dopo JavaScript, o solo nel sorgente. |
 | `tracker_requests_blocked` | numero | Richieste di statistiche e pubblicità fermate durante il rendering. |
 
+### Analisi tra pagine
+
+| Campo | Tipo | Significato |
+|---|---|---|
+| `inlinks` | numero | Pagine del sito che la linkano (pagine distinte, esclusa sé stessa). |
+| `orphan` | booleano | Pagina con risposta 200 non raggiungibile seguendo i link dal punto di partenza (nota da sitemap o elenco). Vuoto se i link non sono stati seguiti. |
+| `outlinks_to_redirect`, `outlinks_to_error` | numeri | Destinazioni interne distinte che sono redirect, o in errore (pagine e file). |
+| `outlinks_external_broken` | numero | Destinazioni esterne distinte che non rispondono (404, 410, 5xx, host inesistente). |
+| `title_duplicates`, `description_duplicates` | numeri | Altre pagine **indicizzabili** con lo stesso valore. Vuoto se la pagina non è indicizzabile. |
+| `content_duplicates` | numero | Altre pagine indicizzabili con contenuto principale identico (almeno 30 parole). |
+| `near_duplicates` | numero | Altre pagine indicizzabili quasi uguali (simhash a 3 bit o meno, almeno 50 parole). |
+| `duplicate_group` | testo | Indirizzo che rappresenta il gruppo di duplicati (il meno profondo, poi il più corto). Vuoto se la pagina è unica. |
+| `canonical_issue` | elenco | Canonical verso redirect, errore, pagina non indicizzabile, pagina non scansionata, in catena; pagina in sitemap o indicata da hreflang ma con canonical altrove; canonical multipli o non validi. |
+| `hreflang_reciprocal` | booleano | `false`: almeno un riferimento senza ritorno o verso una pagina non indicizzabile. Vuoto: nessun hreflang, o destinazioni non scansionate. |
+| `hreflang_issues` | elenco | Ritorni mancanti, destinazioni non indicizzabili, codici lingua non validi, riferimento a sé stessa mancante. |
+| `sitemap_issue` | testo | In sitemap ma non indicizzabile (con il motivo), oppure indicizzabile ma assente dalla sitemap. |
+| `sitemap_lastmod` | testo | Data di modifica dichiarata in sitemap. |
+| `url_params` | elenco | Nomi dei parametri nell'indirizzo. |
+| `pagination` | testo | `pagina N` se l'indirizzo è una pagina di paginazione (`?page=N`, `/page/N`). |
+| `param_duplicate_of` | testo | Indirizzo senza parametri di cui questa pagina è una copia (stesso contenuto o stesso title). |
+
 Solo in `pages.json`: `headers` (intestazioni della risposta), `headings` (titoli in ordine: `[livello, testo]`),
 `images_heaviest` (le cinque immagini più pesanti), `rendered_url` (indirizzo dopo il rendering).
 
-Campi previsti dai passi successivi: duplicati di title e contenuto, link in entrata e pagine orfane, reciprocità
-hreflang, prestazioni, usabilità mobile, sicurezza, incrocio con Search Console e GA4.
+Campi previsti dai passi successivi: prestazioni, usabilità mobile, sicurezza, incrocio con Search Console e GA4.
 
 ## links
 
@@ -142,9 +162,24 @@ hreflang, prestazioni, usabilità mobile, sicurezza, incrocio con Search Console
 | `is_internal` | booleano | Destinazione sul sito in esame. |
 | `in_raw` | booleano | Presente nell'HTML del server. |
 | `in_rendered` | booleano | Presente nel DOM dopo JavaScript. Vuoto se la pagina non è stata renderizzata. |
-| `target_status` | numero | Codice della destinazione, se è stata visitata. |
+| `target_status` | numero | Codice della destinazione: dalla scansione, oppure dalla verifica dei link per siti esterni e file. |
 | `target_final_url` | testo | Se la destinazione è un redirect, dove porta. |
 | `placement` | `main` `nav` `header` `footer` `aside` `body` | Parte della pagina in cui si trova il link. |
+
+## site.json
+
+| Chiave | Contenuto |
+|---|---|
+| `checks` | Controlli con richieste dedicate: `robots` (stato, righe non riconosciute, sitemap dichiarate), `domain_variants` (le versioni http/https e con/senza www, e dove portano), `trailing_slash`, `not_found` (codice di un indirizzo inesistente), `llms_txt`, `ai_crawlers` (per ogni crawler di `data/ai-crawlers.yaml`: `accesso` consentito/bloccato/parziale, da quali regole, cosa è vietato). `null` se non eseguiti. |
+| `robots` | `blocked_assets` (fogli di stile e script vietati a Googlebot), `blocked_sections` (sezioni con pagine vietate ma linkate o in sitemap). |
+| `sitemap` | `files`, `entries`, `not_crawled`, `non_indexable` (per motivo), `indexable_missing`, `lastmod` (con data, non valide, nel futuro, valore più frequente, nota). |
+| `links` | `internal_to_error`, `internal_to_redirect`, `external_broken` (ognuno: numero di link e destinazioni con quante pagine le linkano), `external_checked`, `external_unverifiable`. |
+| `orphans` | `applicable`, `count`, `examples`. |
+| `duplicates` | `titles`, `descriptions`, `content`, `near`: gruppi con valore, numero di pagine, indirizzi. |
+| `parameters` | Per parametro: indirizzi, copie generate, esempi. |
+| `pagination` | Pagine di paginazione, quante con canonical altrove, quante in noindex. |
+| `hreflang` | Pagine con hreflang, lingue, non reciproche, codici non validi, esempi. |
+| `geo.content_without_js` | Quota del contenuto principale già nell'HTML del server: media, pagine sotto la metà, per modello. |
 
 ## manifest.json
 

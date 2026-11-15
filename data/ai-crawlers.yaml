@@ -1,0 +1,50 @@
+# Crawler dei motori e degli assistenti AI: nomi da usare in robots.txt.
+# Il controllo GEO dice, per ognuno, se robots.txt del sito lo lascia passare.
+#
+# Campi:
+#   nome:      token per robots.txt, scritto come nella documentazione del fornitore
+#   azienda:   chi lo gestisce
+#   scopo:     addestramento (raccolta per addestrare i modelli) | ricerca (indice per le risposte con fonti) |
+#              utente (lettura di una pagina su richiesta di una persona) | controllo (non è un crawler: è un
+#              interruttore in robots.txt che dice se i contenuti possono essere usati per l'AI)
+#   fonte:     pagina ufficiale da cui viene il nome
+#   rispetta:  ciò che la fonte dichiara sul rispetto di robots.txt: si | no | non dichiarato
+#              ("no": il fornitore dice che può ignorarlo, tipicamente per le letture chieste da un utente)
+#   verificato: data dell'ultima lettura della fonte; "no" se il nome non è stato riletto sulla documentazione
+#
+# Note dalla lettura del 2026-11-15:
+# - Google non dice quale crawler alimenta AI Overviews e AI Mode: per la ricerca vale Googlebot.
+#   Google-Extended decide solo l'uso per Gemini (addestramento e grounding), non la presenza in ricerca.
+# - Applebot, se robots.txt non lo nomina ma nomina Googlebot, segue le regole di Googlebot (qui non applicato).
+# - Bing: la pagina ufficiale non si è caricata; Bingbot è riportato a memoria e non verificato.
+# - Meta scrive i nomi in minuscolo negli esempi; robots.txt non distingue maiuscole e minuscole.
+#
+# Per aggiornare: modificare questo file, senza toccare il codice.
+
+verificato_il: "2026-11-15"
+crawler:
+  - { nome: GPTBot, azienda: OpenAI, scopo: addestramento, rispetta: "non dichiarato", fonte: "https://developers.openai.com/api/docs/bots", verificato: "2026-11-15" }
+  - { nome: OAI-SearchBot, azienda: OpenAI, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://developers.openai.com/api/docs/bots", verificato: "2026-11-15" }
+  - { nome: ChatGPT-User, azienda: OpenAI, scopo: utente, rispetta: "no", fonte: "https://developers.openai.com/api/docs/bots", verificato: "2026-11-15" }
+  - { nome: ClaudeBot, azienda: Anthropic, scopo: addestramento, rispetta: "si", fonte: "https://support.claude.com/en/articles/8896518", verificato: "2026-11-15" }
+  - { nome: Claude-SearchBot, azienda: Anthropic, scopo: ricerca, rispetta: "si", fonte: "https://support.claude.com/en/articles/8896518", verificato: "2026-11-15" }
+  - { nome: Claude-User, azienda: Anthropic, scopo: utente, rispetta: "si", fonte: "https://support.claude.com/en/articles/8896518", verificato: "2026-11-15" }
+  - { nome: PerplexityBot, azienda: Perplexity, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://docs.perplexity.ai/guides/bots", verificato: "2026-11-15" }
+  - { nome: Perplexity-User, azienda: Perplexity, scopo: utente, rispetta: "no", fonte: "https://docs.perplexity.ai/guides/bots", verificato: "2026-11-15" }
+  - { nome: Googlebot, azienda: Google, scopo: ricerca, rispetta: "si", fonte: "https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers", verificato: "2026-11-15" }
+  - { nome: Google-Extended, azienda: Google, scopo: controllo, rispetta: "si", fonte: "https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers", verificato: "2026-11-15" }
+  - { nome: Google-CloudVertexBot, azienda: Google, scopo: ricerca, rispetta: "si", fonte: "https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers", verificato: "2026-11-15" }
+  - { nome: Applebot, azienda: Apple, scopo: ricerca, rispetta: "si", fonte: "https://support.apple.com/en-us/119829", verificato: "2026-11-15" }
+  - { nome: Applebot-Extended, azienda: Apple, scopo: controllo, rispetta: "si", fonte: "https://support.apple.com/en-us/119829", verificato: "2026-11-15" }
+  - { nome: meta-externalagent, azienda: Meta, scopo: addestramento, rispetta: "non dichiarato", fonte: "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/", verificato: "2026-11-15" }
+  - { nome: meta-webindexer, azienda: Meta, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/", verificato: "2026-11-15" }
+  - { nome: meta-externalfetcher, azienda: Meta, scopo: utente, rispetta: "no", fonte: "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/", verificato: "2026-11-15" }
+  - { nome: Amazonbot, azienda: Amazon, scopo: addestramento, rispetta: "si", fonte: "https://developer.amazon.com/amazonbot", verificato: "2026-11-15" }
+  - { nome: Amzn-SearchBot, azienda: Amazon, scopo: ricerca, rispetta: "si", fonte: "https://developer.amazon.com/amazonbot", verificato: "2026-11-15" }
+  - { nome: Amzn-User, azienda: Amazon, scopo: utente, rispetta: "no", fonte: "https://developer.amazon.com/amazonbot", verificato: "2026-11-15" }
+  - { nome: MistralAI-Training, azienda: Mistral, scopo: addestramento, rispetta: "non dichiarato", fonte: "https://docs.mistral.ai/robots", verificato: "2026-11-15" }
+  - { nome: MistralAI-Index, azienda: Mistral, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://docs.mistral.ai/robots", verificato: "2026-11-15" }
+  - { nome: MistralAI-User, azienda: Mistral, scopo: utente, rispetta: "non dichiarato", fonte: "https://docs.mistral.ai/robots", verificato: "2026-11-15" }
+  - { nome: DuckAssistBot, azienda: DuckDuckGo, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot", verificato: "2026-11-15" }
+  - { nome: CCBot, azienda: Common Crawl, scopo: addestramento, rispetta: "non dichiarato", fonte: "https://commoncrawl.org/ccbot", verificato: "2026-11-15" }
+  - { nome: Bingbot, azienda: Microsoft, scopo: ricerca, rispetta: "non dichiarato", fonte: "https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0", verificato: "no" }

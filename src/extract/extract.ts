@@ -53,6 +53,8 @@ export interface Extraction {
   links: PageLink[];
   /** Indirizzi delle immagini della pagina (attributo src o primo candidato di srcset). */
   images: string[];
+  /** Fogli di stile e script caricati dalla pagina: servono a capire se robots.txt blocca risorse necessarie alla resa. */
+  assets: string[];
 }
 
 const collapse = (s: string | undefined | null) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -149,6 +151,12 @@ export function extractPage(html: string, pageUrl: string, isInternal: (hostname
     if (src && images.length < 500 && !images.includes(src)) images.push(src);
   });
 
+  const assets: string[] = [];
+  $('link[rel~="stylesheet"][href], script[src]').each((_, el) => {
+    const a = absolute($(el).attr('href') ?? $(el).attr('src'), base);
+    if (a && assets.length < 200 && !assets.includes(a)) assets.push(a);
+  });
+
   const visible = visibleText($);
   const main = mainContent($);
   const facts: PageFacts = {
@@ -177,7 +185,7 @@ export function extractPage(html: string, pageUrl: string, isInternal: (hostname
     images_missing_dimensions: missingDims,
     schema: structuredData($, visible),
   };
-  return { facts, links, images };
+  return { facts, links, images, assets };
 }
 
 /** Problemi nella gerarchia dei titoli, in chiaro. */
